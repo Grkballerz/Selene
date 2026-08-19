@@ -15,6 +15,22 @@ android {
         versionName = "0.1.0"
     }
 
+    // A committed, fixed keystore so every build — local or CI — signs with the
+    // SAME certificate. Without this, CI's per-run debug key changes each build
+    // and the APK can't update the installed app in place (signature mismatch),
+    // forcing an uninstall that wipes saved settings. Password is the standard
+    // Android debug convention ("android"): a signing-consistency key, not a
+    // secret. For Play Store distribution, swap in a real release key from CI
+    // secrets — never commit that one.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

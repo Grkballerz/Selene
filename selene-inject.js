@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
-// @namespace    https://github.com/YOUR_USERNAME/selene
-// @version      0.3.0
+// @namespace    https://github.com/Grkballerz/Selene
+// @version      0.4.0
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -36,6 +36,7 @@
     pad: '<svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M9 9h6a5 5 0 0 1 5 5 2.5 2.5 0 0 1-4.6 1.4L14.5 14h-5l-.9 1.4A2.5 2.5 0 0 1 4 14a5 5 0 0 1 5-5z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M7.5 11.4v2.2M6.4 12.5h2.2"/><circle cx="16" cy="11.8" r="1" fill="currentColor"/><circle cx="17.3" cy="13.4" r="1" fill="currentColor"/></svg>',
     signal: '<svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M5 12.5a7 7 0 0 1 14 0M8 13a4 4 0 0 1 8 0"/><circle cx="12" cy="14" r="1.4" fill="currentColor"/></svg>',
     contrast: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg>',
+    monitor: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12" rx="1.5"/><path stroke-linecap="round" d="M8.5 20h7M12 16.5V20"/></svg>',
   };
   const ico = (n) => ICONS[n] || "";
 
@@ -59,6 +60,7 @@
     maxBitrateMbps: 0,
     clarity: 0,
     saturation: 100,
+    uiWidth: 1920, // logical viewport width; larger = smaller-looking UI
   };
 
   const STORE_KEY = "selene.settings.v1";
@@ -82,7 +84,28 @@
     S = { ...DEFAULTS, hudMetrics: { ...DEFAULTS.hudMetrics }, remap: {} };
     saveSettings(); applyAll();
   }
-  function applyAll() { applyHudStyle(); applyVideoFilter(); }
+  function applyAll() { applyHudStyle(); applyVideoFilter(); applyViewport(); }
+
+  // ========================================================================
+  // VIEWPORT — desktop web apps default to a ~980px layout in a TV WebView,
+  // which the big screen then magnifies ("everything too big"). Force a wide
+  // logical viewport so Luna lays out at desktop density and the WebView
+  // scales it down to fit. Tunable via Settings -> Display -> UI size.
+  // ========================================================================
+  function applyViewport() {
+    try {
+      document.querySelectorAll('meta[name="viewport"]').forEach((el) => {
+        if (el.id !== "selene-vp") el.remove();
+      });
+      let m = document.getElementById("selene-vp");
+      if (!m) {
+        m = document.createElement("meta");
+        m.name = "viewport"; m.id = "selene-vp";
+        (document.head || document.documentElement).appendChild(m);
+      }
+      m.setAttribute("content", `width=${S.uiWidth}`);
+    } catch (e) { log("viewport apply failed", e); }
+  }
 
   // ========================================================================
   // STYLES — the lunar design system, injected as a scoped stylesheet
@@ -213,6 +236,55 @@
     st.textContent = CSS;
     (document.head || document.documentElement).appendChild(st);
   }
+
+  // ========================================================================
+  // 0. PLATFORM SPOOF — Luna reads UA Client Hints, not just the UA string.
+  //    In an Android WebView, navigator.userAgentData.platform stays
+  //    "Android" even under a desktop user-agent, so Luna reports an
+  //    "unsupported OS". Present a Windows-desktop identity through the UA-CH
+  //    surface Luna actually queries (getHighEntropyValues). No-op in a real
+  //    desktop browser, where these already read Windows.
+  // ========================================================================
+  try {
+    const uaBrands = [
+      { brand: "Chromium", version: "122" },
+      { brand: "Not(A:Brand", version: "24" },
+      { brand: "Google Chrome", version: "122" },
+    ];
+    const uaFull = [
+      { brand: "Chromium", version: "122.0.6261.94" },
+      { brand: "Not(A:Brand", version: "24.0.0.0" },
+      { brand: "Google Chrome", version: "122.0.6261.94" },
+    ];
+    const highEntropy = {
+      architecture: "x86", bitness: "64", brands: uaBrands,
+      fullVersionList: uaFull, mobile: false, model: "",
+      platform: "Windows", platformVersion: "15.0.0",
+      uaFullVersion: "122.0.6261.94", wow64: false,
+    };
+    const fakeUA = {
+      brands: uaBrands, mobile: false, platform: "Windows",
+      getHighEntropyValues(hints) {
+        const out = { brands: uaBrands, mobile: false, platform: "Windows" };
+        if (Array.isArray(hints)) for (const h of hints) if (h in highEntropy) out[h] = highEntropy[h];
+        return Promise.resolve(out);
+      },
+      toJSON() { return { brands: uaBrands, mobile: false, platform: "Windows" }; },
+    };
+    try {
+      Object.defineProperty(navigator, "userAgentData", { value: fakeUA, configurable: true, enumerable: true });
+    } catch (e1) {
+      // Some WebViews expose it as a non-configurable proto accessor; patch that.
+      const p = navigator.userAgentData && Object.getPrototypeOf(navigator.userAgentData);
+      if (p) {
+        try { Object.defineProperty(p, "platform", { get: () => "Windows", configurable: true }); } catch (e) {}
+        try { Object.defineProperty(p, "mobile", { get: () => false, configurable: true }); } catch (e) {}
+        try { p.getHighEntropyValues = fakeUA.getHighEntropyValues; } catch (e) {}
+      }
+    }
+    // Classic surface some checks still read.
+    try { Object.defineProperty(navigator, "platform", { get: () => "Win32", configurable: true }); } catch (e) {}
+  } catch (e) { log("UA-CH spoof failed", e); }
 
   // ========================================================================
   // 1. PLAYBACK UNLOCK  (installed once; behaviour reads S live)
@@ -588,6 +660,11 @@
         note: "reconnect · server may cap",
         get: () => S.maxBitrateMbps, set: (v) => { S.maxBitrateMbps = v; saveSettings(); } },
 
+      { type: "header", label: "Display", icon: "monitor" },
+      { type: "cycle", label: "UI size", note: "if Luna looks too big / small",
+        options: [["Large", "1280"], ["Medium", "1600"], ["Default", "1920"], ["Small", "2240"], ["Tiny", "2560"]],
+        get: () => String(S.uiWidth), set: (v) => { S.uiWidth = parseInt(v, 10) || 1920; saveSettings(); applyViewport(); } },
+
       { type: "header", label: "Video", icon: "contrast" },
       { type: "slider", label: "Clarity", min: 0, max: 100, step: 5, unit: "%", zero: "Off",
         get: () => S.clarity, set: (v) => { S.clarity = v; saveSettings(); applyVideoFilter(); } },
@@ -794,8 +871,12 @@
     applyAll();
     setInterval(pollStats, 1000);
     requestAnimationFrame(gamepadLoop);
+    // Luna hydrates its own viewport meta during startup; re-assert ours after.
+    window.addEventListener("load", applyViewport);
+    setTimeout(applyViewport, 1500);
     toast("Selene ready — hold View + Menu for settings");
-    log("ready");
+    const uad = navigator.userAgentData || {};
+    log("ready — platform:", uad.platform, "mobile:", uad.mobile, "uiWidth:", S.uiWidth);
   }
   function toast(msg) {
     const t = document.createElement("div");

@@ -92,8 +92,10 @@
   // logical viewport so Luna lays out at desktop density and the WebView
   // scales it down to fit. Tunable via Settings -> Display -> UI size.
   // ========================================================================
+  let vpObserver = null;
   function applyViewport() {
     try {
+      // Remove any viewport meta that isn't ours (Luna re-adds its own).
       document.querySelectorAll('meta[name="viewport"]').forEach((el) => {
         if (el.id !== "selene-vp") el.remove();
       });
@@ -103,8 +105,26 @@
         m.name = "viewport"; m.id = "selene-vp";
         (document.head || document.documentElement).appendChild(m);
       }
-      m.setAttribute("content", `width=${S.uiWidth}`);
+      const want = `width=${S.uiWidth}`;
+      if (m.getAttribute("content") !== want) m.setAttribute("content", want);
     } catch (e) { log("viewport apply failed", e); }
+  }
+  // Luna rewrites its own viewport meta during hydration and when it swaps into
+  // the gamepad/10-foot view, which clobbers ours and re-magnifies the page.
+  // Watch <head> and re-assert on every change. applyViewport is a no-op when
+  // nothing is off, so this converges instead of looping.
+  function watchViewport() {
+    if (vpObserver) return;
+    try {
+      vpObserver = new MutationObserver(() => applyViewport());
+      const target = document.head || document.documentElement;
+      vpObserver.observe(target, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["name", "content"],
+      });
+    } catch (e) { log("viewport observe failed", e); }
   }
 
   // ========================================================================
@@ -871,9 +891,10 @@
     applyAll();
     setInterval(pollStats, 1000);
     requestAnimationFrame(gamepadLoop);
-    // Luna hydrates its own viewport meta during startup; re-assert ours after.
+    // Luna hydrates its own viewport meta during startup and on view changes;
+    // re-assert once now and keep it enforced via the observer.
     window.addEventListener("load", applyViewport);
-    setTimeout(applyViewport, 1500);
+    watchViewport();
     toast("Selene ready — hold View + Menu for settings");
     const uad = navigator.userAgentData || {};
     log("ready — platform:", uad.platform, "mobile:", uad.mobile, "uiWidth:", S.uiWidth);

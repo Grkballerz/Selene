@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Selene — overlay preview</title>
+<style>
+  html,body{margin:0;height:100%}
+  /* faux game behind the overlay so it reads in-context */
+  body{background:
+      radial-gradient(120% 90% at 70% 15%, #23304a 0%, #0e1524 45%, #060810 100%);
+      overflow:hidden;font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .stage{position:fixed;inset:0}
+  .hint{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:5;
+    color:#8b93ab;font-size:12px;letter-spacing:.02em;background:rgba(10,12,20,.6);
+    padding:6px 14px;border-radius:999px;border:1px solid rgba(180,190,240,.12)}
+  .hint b{color:#b8c0ff;font-weight:600}
+
+  /* ---- Selene design system (verbatim from selene-inject.js) ---- */
+  .sel-scope{
+    --text:#eef0f8; --muted:#8b93ab; --faint:#6b7488;
+    --accent:#b8c0ff; --dim:rgba(184,192,255,.16); --line:rgba(180,190,240,.10);
+    --good:#6ee7a8; --warn:#f5c451; --bad:#fb7185; --surface-2:#1a1d2b;
+    -webkit-font-smoothing:antialiased;
+  }
+  #selene-panel *{box-sizing:border-box}
+  #selene-panel{position:fixed;inset:0;z-index:2147483600;display:flex;
+    align-items:center;justify-content:center;background:rgba(5,6,12,.5);
+    backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:sel-ov .18s ease-out}
+  @keyframes sel-ov{from{opacity:0}to{opacity:1}}
+  .sel-card{position:relative;width:min(548px,94vw);max-height:88vh;border-radius:20px;
+    display:flex;flex-direction:column;overflow:hidden;
+    background:linear-gradient(180deg,#141726 0%,#0d0f18 62%);border:1px solid var(--line);
+    box-shadow:0 30px 90px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);
+    animation:sel-card .22s cubic-bezier(.2,.8,.2,1)}
+  @keyframes sel-card{from{opacity:0;transform:translateY(10px) scale(.965)}to{opacity:1;transform:none}}
+  .sel-card::before{content:"";position:absolute;top:-46%;left:50%;transform:translateX(-50%);
+    width:72%;height:170px;border-radius:50%;pointer-events:none;
+    background:radial-gradient(closest-side,rgba(184,192,255,.16),transparent)}
+  .sel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 18px 12px;position:relative}
+  .sel-brand{display:flex;align-items:center;gap:10px}
+  .sel-brand .sel-cr{width:22px;height:22px;color:var(--accent);flex:none;filter:drop-shadow(0 0 7px rgba(184,192,255,.55))}
+  .sel-word{font-size:15px;font-weight:600;letter-spacing:.34em;color:#fff;padding-left:.34em}
+  .sel-sub{font-size:11px;color:var(--muted);margin-top:3px}
+  .sel-hints{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .sel-cap{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted)}
+  .sel-key{min-width:20px;text-align:center;padding:2px 6px;border-radius:6px;background:var(--surface-2);
+    border:1px solid var(--line);color:var(--text);font-size:10.5px;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums}
+  .sel-rule{height:1px;margin:0 18px;background:linear-gradient(90deg,transparent,var(--dim) 18%,var(--dim) 82%,transparent)}
+  .sel-body{overflow-y:auto;padding:6px 10px 14px;scrollbar-width:thin;scrollbar-color:rgba(184,192,255,.32) transparent}
+  .sel-body::-webkit-scrollbar{width:9px}
+  .sel-body::-webkit-scrollbar-thumb{background:rgba(184,192,255,.26);border-radius:9px;border:2px solid transparent;background-clip:content-box}
+  .sel-sec{display:flex;align-items:center;gap:9px;padding:15px 12px 6px}
+  .sel-ic{width:15px;height:15px;color:var(--accent);flex:none;display:flex}
+  .sel-ic svg{width:15px;height:15px}
+  .sel-eye{font-size:10.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);opacity:.92;white-space:nowrap}
+  .sel-secrule{flex:1;height:1px;background:var(--line)}
+  .sel-row{display:flex;align-items:center;gap:11px;padding:8px 9px 8px 5px;border-radius:11px;margin:1px 4px;position:relative;transition:background .13s ease,box-shadow .13s ease}
+  .sel-mk{width:15px;flex:none;color:var(--accent);display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(.55) translateX(-3px);transition:opacity .14s,transform .14s}
+  .sel-mk svg{width:14px;height:14px;filter:drop-shadow(0 0 6px rgba(184,192,255,.75))}
+  .sel-row.on{background:rgba(184,192,255,.11);box-shadow:inset 0 0 0 1px rgba(184,192,255,.34)}
+  .sel-row.on .sel-mk{opacity:1;transform:none}
+  .sel-lbl{flex:1;color:#d6dae6;font-size:13.5px}
+  .sel-row.on .sel-lbl{color:#fff}
+  .sel-note{color:var(--faint);font-size:10.5px;margin-left:8px}
+  .sel-ctl{display:flex;align-items:center;gap:10px;flex:none}
+  .sel-sw{width:40px;height:22px;border-radius:999px;background:#2a2e3f;border:1px solid var(--line);position:relative;transition:background .16s}
+  .sel-sw.y{background:linear-gradient(90deg,#7c86e0,#b8c0ff);border-color:transparent}
+  .sel-kn{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#e9ebf5;box-shadow:0 1px 3px rgba(0,0,0,.4);transition:left .16s cubic-bezier(.3,1.4,.5,1)}
+  .sel-sw.y .sel-kn{left:20px}
+  .sel-sl{display:flex;align-items:center;gap:10px}
+  .sel-tr{width:104px;height:6px;border-radius:999px;background:#262a3a;position:relative;box-shadow:inset 0 1px 2px rgba(0,0,0,.45)}
+  .sel-fl{position:absolute;left:0;top:0;height:6px;border-radius:999px;background:linear-gradient(90deg,#7c86e0,#b8c0ff);box-shadow:0 0 8px rgba(184,192,255,.5);transition:width .12s ease}
+  .sel-kns{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;background:#eef0f8;transform:translate(-50%,-50%);box-shadow:0 1px 3px rgba(0,0,0,.5);transition:left .12s ease}
+  .sel-vl{min-width:60px;text-align:right;font:12px ui-monospace,monospace;color:var(--text);font-variant-numeric:tabular-nums}
+  .sel-cy{display:flex;align-items:center;gap:8px}
+  .sel-ch{color:var(--muted);font-size:16px;line-height:1}
+  .sel-row.on .sel-ch{color:var(--accent)}
+  .sel-cv{min-width:72px;text-align:center;color:var(--accent);font-size:13px;font-weight:500}
+  .sel-chip{font:12px ui-monospace,monospace;color:var(--muted);padding:3px 9px;border-radius:7px;background:var(--surface-2);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+  .sel-chip.a{color:var(--accent);border-color:rgba(184,192,255,.4)}
+  #selene-hud{position:fixed;top:16px;left:16px;z-index:2147483000;min-width:192px;border-radius:12px;overflow:hidden;pointer-events:none;
+    background:linear-gradient(180deg,rgba(18,20,31,.94),rgba(11,13,20,.94));border:1px solid var(--line);
+    box-shadow:0 8px 30px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.04)}
+  .sel-hh{display:flex;align-items:center;gap:7px;padding:7px 11px;border-bottom:1px solid var(--line);background:rgba(184,192,255,.05)}
+  .sel-hh .sel-cr{width:13px;height:13px;color:var(--accent);flex:none}
+  .sel-hn{font-size:10px;font-weight:600;letter-spacing:.22em;color:#eef0f8;padding-left:.22em;flex:1}
+  .sel-hd{width:7px;height:7px;border-radius:50%;flex:none;box-shadow:0 0 6px currentColor}
+  .sel-hg{padding:9px 11px 5px;font:11.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .sel-hr{display:flex;justify-content:space-between;gap:14px;padding:1.5px 0;line-height:1.55}
+  .sel-hk{color:#7f889e}
+  .sel-hv{font-variant-numeric:tabular-nums}
+  .sel-sp{display:flex;gap:12px;padding:2px 11px 10px}
+  .sel-spc{flex:1;min-width:0}
+  .sel-spl{font:9px ui-monospace,monospace;color:var(--faint);letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px}
+  .sel-spg{width:100%;height:20px;display:block}
+  .sel-spg polyline{filter:drop-shadow(0 0 3px rgba(184,192,255,.45))}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="stage sel-scope">
+  <div class="hint">Static preview · use <b>↑ ↓</b> to move the selection. The real overlay runs injected over Luna.</div>
+
+  <!-- HUD -->
+  <div id="selene-hud">
+    <div class="sel-hh">
+      <span class="sel-cr"></span>
+      <span class="sel-hn">SELENE</span>
+      <span class="sel-hd" style="color:#6ee7a8;background:#6ee7a8"></span>
+    </div>
+    <div class="sel-hg">
+      <div class="sel-hr"><span class="sel-hk">res</span><span class="sel-hv">1920x1080</span></div>
+      <div class="sel-hr"><span class="sel-hk">fps</span><span class="sel-hv" style="color:#6ee7a8">60</span></div>
+      <div class="sel-hr"><span class="sel-hk">bitrate</span><span class="sel-hv">14.2 Mbps</span></div>
+      <div class="sel-hr"><span class="sel-hk">rtt</span><span class="sel-hv" style="color:#6ee7a8">22 ms</span></div>
+      <div class="sel-hr"><span class="sel-hk">dropped</span><span class="sel-hv" style="color:#6ee7a8">0.0%</span></div>
+      <div class="sel-hr"><span class="sel-hk">jitter</span><span class="sel-hv" style="color:#6ee7a8">4 ms</span></div>
+      <div class="sel-hr"><span class="sel-hk">codec</span><span class="sel-hv">H264</span></div>
+    </div>
+    <div class="sel-sp">
+      <div class="sel-spc"><div class="sel-spl">bitrate</div>
+        <svg class="sel-spg" viewBox="0 0 64 20" preserveAspectRatio="none"><polyline points="0,14 8,11 16,13 24,7 32,9 40,5 48,8 56,4 64,6" fill="none" stroke="#b8c0ff" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
+      <div class="sel-spc"><div class="sel-spl">fps</div>
+        <svg class="sel-spg" viewBox="0 0 64 20" preserveAspectRatio="none"><polyline points="0,4 8,4 16,5 24,4 32,4 40,6 48,4 56,4 64,4" fill="none" stroke="#b8c0ff" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
+    </div>
+  </div>
+
+  <!-- Settings panel -->
+  <div id="selene-panel">
+    <div class="sel-card">
+      <div class="sel-head">
+        <div>
+          <div class="sel-brand"><span class="sel-cr"></span><span class="sel-word">SELENE</span></div>
+          <div class="sel-sub">Overlay settings</div>
+        </div>
+        <div class="sel-hints">
+          <span class="sel-cap"><span class="sel-key">↕</span>Move</span>
+          <span class="sel-cap"><span class="sel-key">A</span>Select</span>
+          <span class="sel-cap"><span class="sel-key">B</span>Close</span>
+        </div>
+      </div>
+      <div class="sel-rule"></div>
+      <div class="sel-body" id="body"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var CRESCENT='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+  var ICONS={
+    bolt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M13 2 5 13h6l-1 9 8-11h-6z"/></svg>',
+    activity:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-7 4 14 2.5-7H21"/></svg>',
+    pad:'<svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M9 9h6a5 5 0 0 1 5 5 2.5 2.5 0 0 1-4.6 1.4L14.5 14h-5l-.9 1.4A2.5 2.5 0 0 1 4 14a5 5 0 0 1 5-5z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M7.5 11.4v2.2M6.4 12.5h2.2"/><circle cx="16" cy="11.8" r="1" fill="currentColor"/><circle cx="17.3" cy="13.4" r="1" fill="currentColor"/></svg>',
+    signal:'<svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M5 12.5a7 7 0 0 1 14 0M8 13a4 4 0 0 1 8 0"/><circle cx="12" cy="14" r="1.4" fill="currentColor"/></svg>',
+    contrast:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg>'
+  };
+  // A representative render of the root page.
+  var ROWS=[
+    {sec:"Playback unlock",icon:"bolt"},
+    {label:"Unlock low-latency gate",note:"next stream",sw:1},
+    {label:"Force codec support",note:"turn off if black screen",sw:1},
+    {sec:"Stats overlay",icon:"activity"},
+    {label:"Show overlay",sw:1},
+    {label:"Corner",cy:"Top left"},
+    {label:"Opacity",sl:92,unit:"%"},
+    {label:"Choose metrics",arrow:1},
+    {sec:"Controller",icon:"pad"},
+    {label:"Stick deadzone",sl:12,unit:"%"},
+    {label:"Vibration",sl:100,unit:"%"},
+    {label:"Remap buttons",arrow:1},
+    {sec:"Streaming quality",icon:"signal"},
+    {label:"Preferred codec",note:"reconnect to apply",cy:"Auto"},
+    {label:"Max bitrate",note:"reconnect · server may cap",sl:0,unit:" Mbps",zero:"Auto"},
+    {sec:"Video",icon:"contrast"},
+    {label:"Clarity",sl:20,unit:"%"},
+    {label:"Saturation",sl:100,unit:"%"},
+    {gap:1},
+    {label:"Reset all to defaults",arrow:1},
+    {label:"Close",arrow:1}
+  ];
+  var focusables=[]; ROWS.forEach(function(r,i){ if(!r.sec&&!r.gap) focusables.push(i); });
+  var focus=4; // start on "Show overlay"
+
+  function ctlHtml(r){
+    if(r.sw!==undefined) return '<span class="sel-sw '+(r.sw?'y':'')+'"><span class="sel-kn"></span></span>';
+    if(r.sl!==undefined){
+      var pct=Math.max(0,Math.min(100,r.sl)); // sliders here are already 0..100-ish for preview
+      if(r.label==="Max bitrate") pct=(r.sl/25)*100;
+      var disp=(r.zero&&r.sl===0)?r.zero:r.sl+(r.unit||"");
+      return '<span class="sel-sl"><span class="sel-tr"><span class="sel-fl" style="width:'+pct+'%"></span><span class="sel-kns" style="left:'+pct+'%"></span></span><span class="sel-vl">'+disp+'</span></span>';
+    }
+    if(r.cy!==undefined) return '<span class="sel-cy"><span class="sel-ch">‹</span><span class="sel-cv">'+r.cy+'</span><span class="sel-ch">›</span></span>';
+    return '';
+  }
+  function render(){
+    var focusedIdx=focusables[focus];
+    var html="";
+    ROWS.forEach(function(r,i){
+      if(r.sec){ html+='<div class="sel-sec"><span class="sel-ic">'+ICONS[r.icon]+'</span><span class="sel-eye">'+r.sec+'</span><span class="sel-secrule"></span></div>'; return; }
+      if(r.gap){ html+='<div style="height:6px"></div>'; return; }
+      var on=i===focusedIdx;
+      var note=r.note?'<span class="sel-note">'+r.note+'</span>':'';
+      html+='<div class="sel-row '+(on?'on':'')+'"><span class="sel-mk">'+CRESCENT+'</span><span class="sel-lbl">'+r.label+note+'</span><span class="sel-ctl">'+ctlHtml(r)+'</span></div>';
+    });
+    document.getElementById("body").innerHTML=html;
+    // fill crescents in header/HUD
+    document.querySelectorAll(".sel-cr").forEach(function(el){ if(!el.innerHTML) el.innerHTML=CRESCENT; });
+    var f=document.querySelector(".sel-row.on"); if(f) f.scrollIntoView({block:"nearest"});
+  }
+  window.addEventListener("keydown",function(e){
+    if(e.key==="ArrowDown"){focus=(focus+1)%focusables.length;render();e.preventDefault();}
+    if(e.key==="ArrowUp"){focus=(focus-1+focusables.length)%focusables.length;render();e.preventDefault();}
+  });
+  render();
+</script>
+</body>
+</html>

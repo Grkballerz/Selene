@@ -1,0 +1,17 @@
+# Gradle / Android build output
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.apk
+
+# Synced from repo root by the syncInjectScript Gradle task
+android/app/src/main/assets/selene-inject.js
+
+# UCW local state (knowledge docs are committed; DB, state, and logs are not)
+.ucw/memory.sqlite
+.ucw/state/
+.ucw/*.log
+
+.DS_Store

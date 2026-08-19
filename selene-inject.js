@@ -60,7 +60,7 @@
     maxBitrateMbps: 0,
     clarity: 0,
     saturation: 100,
-    uiWidth: 1920, // logical viewport width; larger = smaller-looking UI
+    uiZoom: 80, // whole-page zoom %; shrinks Luna's TV UI, auto-100 while streaming
   };
 
   const STORE_KEY = "selene.settings.v1";
@@ -84,47 +84,30 @@
     S = { ...DEFAULTS, hudMetrics: { ...DEFAULTS.hudMetrics }, remap: {} };
     saveSettings(); applyAll();
   }
-  function applyAll() { applyHudStyle(); applyVideoFilter(); applyViewport(); }
+  function applyAll() { applyHudStyle(); applyVideoFilter(); applyZoom(); }
 
   // ========================================================================
-  // VIEWPORT — desktop web apps default to a ~980px layout in a TV WebView,
-  // which the big screen then magnifies ("everything too big"). Force a wide
-  // logical viewport so Luna lays out at desktop density and the WebView
-  // scales it down to fit. Tunable via Settings -> Display -> UI size.
+  // ZOOM — Luna's TV / 10-foot UI is intentionally large. A whole-page CSS
+  // zoom shrinks it to taste and is robust to whichever layout Luna renders
+  // (viewport width doesn't help: the TV UI sizes off vw units). Held at
+  // 100% while a game is actually streaming so gameplay isn't scaled down —
+  // detected via the live WebRTC peer, NOT <video>, because Luna's home-screen
+  // heroes are autoplaying trailers we must ignore.
   // ========================================================================
-  let vpObserver = null;
-  function applyViewport() {
+  let _lastZoom = null;
+  function isStreaming() {
     try {
-      // Remove any viewport meta that isn't ours (Luna re-adds its own).
-      document.querySelectorAll('meta[name="viewport"]').forEach((el) => {
-        if (el.id !== "selene-vp") el.remove();
-      });
-      let m = document.getElementById("selene-vp");
-      if (!m) {
-        m = document.createElement("meta");
-        m.name = "viewport"; m.id = "selene-vp";
-        (document.head || document.documentElement).appendChild(m);
-      }
-      const want = `width=${S.uiWidth}`;
-      if (m.getAttribute("content") !== want) m.setAttribute("content", want);
-    } catch (e) { log("viewport apply failed", e); }
+      return !!(peer && (peer.connectionState === "connected" ||
+        peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed"));
+    } catch (e) { return false; }
   }
-  // Luna rewrites its own viewport meta during hydration and when it swaps into
-  // the gamepad/10-foot view, which clobbers ours and re-magnifies the page.
-  // Watch <head> and re-assert on every change. applyViewport is a no-op when
-  // nothing is off, so this converges instead of looping.
-  function watchViewport() {
-    if (vpObserver) return;
+  function applyZoom() {
     try {
-      vpObserver = new MutationObserver(() => applyViewport());
-      const target = document.head || document.documentElement;
-      vpObserver.observe(target, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ["name", "content"],
-      });
-    } catch (e) { log("viewport observe failed", e); }
+      const z = isStreaming() ? 1 : Math.max(0.5, Math.min(1, S.uiZoom / 100));
+      if (z === _lastZoom) return;
+      _lastZoom = z;
+      document.documentElement.style.zoom = String(z);
+    } catch (e) { log("zoom apply failed", e); }
   }
 
   // ========================================================================
@@ -406,6 +389,11 @@
       const pc = new NativePC(...args);
       peer = pc;
       try {
+        // A game stream starting/stopping flips the zoom gate.
+        pc.addEventListener("connectionstatechange", applyZoom);
+        pc.addEventListener("iceconnectionstatechange", applyZoom);
+      } catch (e) {}
+      try {
         const origSLD = pc.setLocalDescription.bind(pc);
         pc.setLocalDescription = function (desc) {
           try { desc = mungeSdp(desc); } catch (e) { log("munge failed", e); }
@@ -681,9 +669,9 @@
         get: () => S.maxBitrateMbps, set: (v) => { S.maxBitrateMbps = v; saveSettings(); } },
 
       { type: "header", label: "Display", icon: "monitor" },
-      { type: "cycle", label: "UI size", note: "if Luna looks too big / small",
-        options: [["Large", "1280"], ["Medium", "1600"], ["Default", "1920"], ["Small", "2240"], ["Tiny", "2560"]],
-        get: () => String(S.uiWidth), set: (v) => { S.uiWidth = parseInt(v, 10) || 1920; saveSettings(); applyViewport(); } },
+      { type: "slider", label: "Zoom", min: 50, max: 100, step: 5, unit: "%",
+        note: "shrinks Luna · 100% while streaming",
+        get: () => S.uiZoom, set: (v) => { S.uiZoom = v; saveSettings(); applyZoom(); } },
 
       { type: "header", label: "Video", icon: "contrast" },
       { type: "slider", label: "Clarity", min: 0, max: 100, step: 5, unit: "%", zero: "Off",
@@ -891,13 +879,11 @@
     applyAll();
     setInterval(pollStats, 1000);
     requestAnimationFrame(gamepadLoop);
-    // Luna hydrates its own viewport meta during startup and on view changes;
-    // re-assert once now and keep it enforced via the observer.
-    window.addEventListener("load", applyViewport);
-    watchViewport();
+    // Keep zoom correct as streams start/stop even if a peer event is missed.
+    setInterval(applyZoom, 1000);
     toast("Selene ready — hold View + Menu for settings");
     const uad = navigator.userAgentData || {};
-    log("ready — platform:", uad.platform, "mobile:", uad.mobile, "uiWidth:", S.uiWidth);
+    log("ready — platform:", uad.platform, "mobile:", uad.mobile, "zoom:", S.uiZoom);
   }
   function toast(msg) {
     const t = document.createElement("div");

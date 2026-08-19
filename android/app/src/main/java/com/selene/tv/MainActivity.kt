@@ -49,11 +49,9 @@ class MainActivity : ComponentActivity() {
                 userAgentString = desktopUa
                 // WebRTC needs these; Luna streams over it.
                 setSupportMultipleWindows(false)
-                // Desktop web apps default to a ~980px layout in a TV WebView,
-                // which the big screen magnifies. Wide-viewport + overview mode
-                // lets Selene's injected viewport width lay out at desktop
-                // density and scale to fit; textZoom is pinned so the TV's
-                // system font scale can't re-inflate everything.
+                // Let Luna's own responsive layout size to the display, and pin
+                // textZoom so the TV's system font scale can't inflate the UI.
+                // Fine UI sizing is done in-page by Selene's zoom control.
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 textZoom = 100

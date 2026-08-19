@@ -9,6 +9,10 @@ android/.idea/
 # Synced from repo root by the syncInjectScript Gradle task
 android/app/src/main/assets/selene-inject.js
 
+# Release keystore is decoded from CI secrets at build time — never commit it.
+# (The debug.keystore IS committed on purpose; it is a non-secret dev key.)
+android/app/release.keystore
+
 # UCW local state (knowledge docs are committed; DB, state, and logs are not)
 .ucw/memory.sqlite
 .ucw/state/

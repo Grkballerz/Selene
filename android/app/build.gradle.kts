@@ -15,19 +15,36 @@ android {
         versionName = "0.1.0"
     }
 
-    // A committed, fixed keystore so every build — local or CI — signs with the
-    // SAME certificate. Without this, CI's per-run debug key changes each build
-    // and the APK can't update the installed app in place (signature mismatch),
-    // forcing an uninstall that wipes saved settings. Password is the standard
-    // Android debug convention ("android"): a signing-consistency key, not a
-    // secret. For Play Store distribution, swap in a real release key from CI
-    // secrets — never commit that one.
+    // Two-tier signing, both deterministic so APKs update in place instead of
+    // forcing an uninstall:
+    //  - debug: a committed, non-secret keystore (password is the standard
+    //    Android debug convention) used for local dev and as a fallback.
+    //  - release: a real key that lives ONLY in CI secrets, decoded to
+    //    release.keystore at build time and read from env vars here. Never
+    //    committed. If the secrets are absent (e.g. a local `assembleRelease`),
+    //    release falls back to the debug key so the build still produces an
+    //    installable APK.
+    val relStoreFile = System.getenv("SIGNING_KEYSTORE_FILE") ?: "release.keystore"
+    val relStorePw = System.getenv("SIGNING_KEYSTORE_PASSWORD")
+    val relAlias = System.getenv("SIGNING_KEY_ALIAS")
+    val relKeyPw = System.getenv("SIGNING_KEY_PASSWORD")
+    val hasReleaseSigning = relStorePw != null && relAlias != null &&
+        relKeyPw != null && file(relStoreFile).exists()
+
     signingConfigs {
         getByName("debug") {
             storeFile = file("debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+        }
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(relStoreFile)
+                storePassword = relStorePw
+                keyAlias = relAlias
+                keyPassword = relKeyPw
+            }
         }
     }
 
@@ -38,6 +55,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName(if (hasReleaseSigning) "release" else "debug")
         }
     }
 

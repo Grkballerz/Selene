@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.5.1
+// @version      0.5.2
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -141,8 +141,11 @@
   background:linear-gradient(180deg,#141726 0%,#0d0f18 62%);
   border:1px solid var(--line);
   box-shadow:0 30px 90px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);
-  animation:sel-card .22s cubic-bezier(.2,.8,.2,1);
 }
+/* Entry animation only on the first render after opening — NOT on every
+   D-pad move (the panel rebuilds its DOM each navigation, which otherwise
+   replays this and flashes + breaks scroll math). */
+.sel-card.sel-in{animation:sel-card .22s cubic-bezier(.2,.8,.2,1)}
 @keyframes sel-card{from{opacity:0;transform:translateY(10px) scale(.965)}to{opacity:1;transform:none}}
 .sel-card::before{
   content:"";position:absolute;top:-46%;left:50%;transform:translateX(-50%);
@@ -625,7 +628,7 @@
     ["LT", 6], ["RT", 7], ["View", 8], ["Menu", 9], ["LS", 10], ["RS", 11],
     ["D-Up", 12], ["D-Down", 13], ["D-Left", 14], ["D-Right", 15],
   ];
-  let panel, menuOpen = false, pageStack = [], focus = 0, capturing = null;
+  let panel, menuOpen = false, pageStack = [], focus = 0, capturing = null, animateNext = false;
   // Non-null while the user is recording a new menu-open shortcut on the pad.
   let chordCap = null;
   let testMode = false; // live controller readout (which index each button fires)
@@ -783,8 +786,15 @@
         `<div id="sel-test" style="margin-top:14px">…</div></div></div>`
       : "";
 
+    // Preserve scroll across the full-DOM rebuild so navigation doesn't reset
+    // to the top and jump; only the opening render plays the entry animation.
+    const prevBody = panel.querySelector(".sel-body");
+    const prevScroll = prevBody ? prevBody.scrollTop : 0;
+    const cardCls = animateNext ? "sel-card sel-in" : "sel-card";
+    animateNext = false;
+
     panel.innerHTML =
-      `<div class="sel-card">` +
+      `<div class="${cardCls}">` +
         `<div class="sel-head">` +
           `<div><div class="sel-brand"><span class="sel-cr">${CRESCENT}</span><span class="sel-word">${APP}</span></div>` +
             `<div class="sel-sub">${page.title}</div></div>` +
@@ -799,6 +809,8 @@
         cap +
       `</div>`;
 
+    const body = panel.querySelector(".sel-body");
+    if (body) body.scrollTop = prevScroll;
     const focEl = panel.querySelector(".sel-row.on");
     if (focEl && focEl.scrollIntoView) focEl.scrollIntoView({ block: "nearest" });
   }
@@ -806,6 +818,7 @@
   function openMenu() {
     if (menuOpen) return;
     menuOpen = true; pageStack = [rootPage()]; focus = 0; capturing = null; chordCap = null; testMode = false;
+    animateNext = true;
     panel.style.display = "flex"; renderPanel();
   }
   function closeMenu() { menuOpen = false; capturing = null; chordCap = null; testMode = false; panel.style.display = "none"; }

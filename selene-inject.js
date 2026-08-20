@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.5.6
+// @version      0.5.7
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -167,7 +167,7 @@
   font-size:10.5px;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums}
 .sel-rule{height:1px;margin:0 18px;background:linear-gradient(90deg,transparent,var(--dim) 18%,var(--dim) 82%,transparent)}
 
-.sel-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:6px 10px 14px;scrollbar-width:thin;scrollbar-color:rgba(184,192,255,.32) transparent}
+.sel-body{position:relative;flex:1 1 auto;min-height:0;overflow-y:auto;padding:6px 10px 14px;scrollbar-width:thin;scrollbar-color:rgba(184,192,255,.32) transparent}
 .sel-body::-webkit-scrollbar{width:9px}
 .sel-body::-webkit-scrollbar-thumb{background:rgba(184,192,255,.26);border-radius:9px;border:2px solid transparent;background-clip:content-box}
 .sel-body::-webkit-scrollbar-track{background:transparent}
@@ -832,9 +832,21 @@
       `</div>`;
 
     const body = panel.querySelector(".sel-body");
-    if (body) body.scrollTop = prevScroll;
     const focEl = panel.querySelector(".sel-row.on");
-    if (focEl && focEl.scrollIntoView) focEl.scrollIntoView({ block: "nearest" });
+    if (body) {
+      body.scrollTop = prevScroll;
+      if (focEl) {
+        // Manual scroll by element offset — scrollIntoView miscomputes under the
+        // page's CSS zoom (80% on the main menu), so the selection would scroll
+        // off-screen. .sel-body is position:relative, so offsetTop is relative
+        // to it. Zoom-independent.
+        const pad = 12;
+        const top = focEl.offsetTop;
+        const bot = top + focEl.offsetHeight;
+        if (top - pad < body.scrollTop) body.scrollTop = Math.max(0, top - pad);
+        else if (bot + pad > body.scrollTop + body.clientHeight) body.scrollTop = bot + pad - body.clientHeight;
+      }
+    }
   }
 
   function openMenu() {

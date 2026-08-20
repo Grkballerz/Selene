@@ -3,10 +3,12 @@ package com.selene.tv
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Bundle
+import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
@@ -78,6 +80,17 @@ class MainActivity : ComponentActivity() {
                     // Grant protected media (DRM) and any A/V capture Luna asks for.
                     request.grant(request.resources)
                 }
+
+                // Route Selene's own console logs (and page errors) to logcat so
+                // they're visible in release builds. Tag: SeleneWeb.
+                override fun onConsoleMessage(m: ConsoleMessage): Boolean {
+                    val msg = m.message()
+                    if (msg.startsWith("[SELENE]") ||
+                        m.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                        Log.i("SeleneWeb", "$msg (${m.sourceId()}:${m.lineNumber()})")
+                    }
+                    return true
+                }
             }
         }
 
@@ -143,10 +156,11 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun showKeyboard() {
             runOnUiThread {
-                web.requestFocus()
+                val focused = web.requestFocus()
                 val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                 @Suppress("DEPRECATION")
-                imm.showSoftInput(web, InputMethodManager.SHOW_FORCED)
+                val shown = imm.showSoftInput(web, InputMethodManager.SHOW_FORCED)
+                Log.i("SeleneWeb", "[native] showKeyboard: requestFocus=$focused showSoftInput=$shown")
             }
         }
 

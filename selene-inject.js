@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.6.1
+// @version      0.6.2
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -1131,14 +1131,20 @@
   }
   function installKeyboardBridge() {
     const nat = window.SeleneNative;
-    if (!nat || !nat.showKeyboard) return;
+    log("kbd bridge:", nat && nat.showKeyboard ? "SeleneNative OK" : "SeleneNative MISSING",
+      "top?", window.top === window);
+    // Log every focus so we can see whether Luna's fields are real inputs (and in
+    // this frame) at all — even if the bridge is missing.
     document.addEventListener("focusin", (e) => {
-      try { if (isEditable(e.target)) nat.showKeyboard(); } catch (err) {}
+      const t = e.target || {};
+      log("focusin", t.tagName, "type=" + (t.getAttribute && t.getAttribute("type")),
+        "editable=" + isEditable(t), "ce=" + (t.isContentEditable));
+      try { if (nat && nat.showKeyboard && isEditable(t)) nat.showKeyboard(); }
+      catch (err) { log("showKeyboard err", err && err.message); }
     }, true);
     document.addEventListener("focusout", (e) => {
-      try { if (isEditable(e.target)) nat.hideKeyboard(); } catch (err) {}
+      try { if (nat && nat.hideKeyboard && isEditable(e.target)) nat.hideKeyboard(); } catch (err) {}
     }, true);
-    log("keyboard bridge installed");
   }
   function toast(msg) {
     const t = document.createElement("div");

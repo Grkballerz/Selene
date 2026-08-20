@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.4.0
+// @version      0.5.0
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -56,6 +56,7 @@
     deadzone: 12,
     vibration: 100,
     remap: {},
+    menuChord: [8, 9], // physical button indices that TOGETHER open Selene (rebindable)
     preferredCodec: "auto",
     maxBitrateMbps: 0,
     clarity: 0,
@@ -74,6 +75,9 @@
         ...DEFAULTS, ...saved,
         hudMetrics: { ...DEFAULTS.hudMetrics, ...(saved.hudMetrics || {}) },
         remap: { ...(saved.remap || {}) },
+        menuChord: Array.isArray(saved.menuChord) && saved.menuChord.length
+          ? saved.menuChord.map(Number).filter((n) => Number.isInteger(n) && n >= 0)
+          : [...DEFAULTS.menuChord],
       };
     } catch (e) { return { ...DEFAULTS }; }
   }
@@ -81,7 +85,7 @@
     try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) {}
   }
   function resetSettings() {
-    S = { ...DEFAULTS, hudMetrics: { ...DEFAULTS.hudMetrics }, remap: {} };
+    S = { ...DEFAULTS, hudMetrics: { ...DEFAULTS.hudMetrics }, remap: {}, menuChord: [...DEFAULTS.menuChord] };
     saveSettings(); applyAll();
   }
   function applyAll() { applyHudStyle(); applyVideoFilter(); applyZoom(); }
@@ -622,6 +626,15 @@
     ["D-Up", 12], ["D-Down", 13], ["D-Left", 14], ["D-Right", 15],
   ];
   let panel, menuOpen = false, pageStack = [], focus = 0, capturing = null;
+  // Non-null while the user is recording a new menu-open shortcut on the pad.
+  let chordCap = null;
+  function startChordCapture() { chordCap = { armed: false, acc: new Set(), had: false }; renderPanel(); }
+  function chordLabel(arr) {
+    if (!arr || !arr.length) return "unset";
+    // Raw indices: on non-standard pads the "logical" name (View/Menu) wouldn't
+    // match the physical button, so the number is the honest label.
+    return arr.map((i) => "b" + i).join(" + ");
+  }
 
   function pgMetrics() {
     const keys = [["res", "Resolution"], ["fps", "FPS"], ["bitrate", "Bitrate"], ["rtt", "RTT"],
@@ -633,7 +646,7 @@
   function pgRemap() {
     const items = LOGICAL.map(([name, idx]) => ({ type: "rebind", label: name, logical: idx }));
     items.push({ type: "action", label: "Reset to default mapping", run: () => { S.remap = {}; saveSettings(); } });
-    return { title: "Press a row, then the button you want", items };
+    return { title: "Select a row, then press the physical button (not your menu shortcut)", items };
   }
   function rootPage() {
     return { title: "Overlay settings", items: [
@@ -658,6 +671,8 @@
         get: () => S.deadzone, set: (v) => { S.deadzone = v; saveSettings(); } },
       { type: "slider", label: "Vibration", min: 0, max: 100, step: 10, unit: "%",
         get: () => S.vibration, set: (v) => { S.vibration = v; saveSettings(); } },
+      { type: "chord", label: "Menu shortcut", note: "buttons that open Selene",
+        get: () => S.menuChord },
       { type: "page", label: "Remap buttons", build: pgRemap },
 
       { type: "header", label: "Streaming quality", icon: "signal" },
@@ -727,6 +742,8 @@
         const phys = (S.remap && S.remap[it.logical] != null) ? S.remap[it.logical] : it.logical;
         const def = phys === it.logical;
         ctl = `<span class="sel-chip ${def ? "" : "a"}">→ ${phys}</span>`;
+      } else if (it.type === "chord") {
+        ctl = `<span class="sel-chip a">${chordLabel(it.get())}</span>`;
       }
       const note = it.note ? `<span class="sel-note">${it.note}</span>` : "";
       rows += `<div class="sel-row ${on ? "on" : ""}"><span class="sel-mk">${CRESCENT}</span><span class="sel-lbl">${it.label}${note}</span><span class="sel-ctl">${ctl}</span></div>`;
@@ -740,6 +757,10 @@
       ? `<div class="sel-capov"><div><div class="sel-capm">${CRESCENT}</div>` +
         `<div class="sel-capt">Rebind ${LOGICAL[capturing.logical] ? LOGICAL[capturing.logical][0] : capturing.logical}</div>` +
         `<div class="sel-caps">Press a button — B or Esc to cancel</div></div></div>`
+      : chordCap
+      ? `<div class="sel-capov"><div><div class="sel-capm">${CRESCENT}</div>` +
+        `<div class="sel-capt">Set menu shortcut</div>` +
+        `<div class="sel-caps">Hold the button(s) that should open Selene, then release · Esc keeps the current one</div></div></div>`
       : "";
 
     panel.innerHTML =
@@ -767,8 +788,9 @@
     menuOpen = true; pageStack = [rootPage()]; focus = 0; capturing = null;
     panel.style.display = "flex"; renderPanel();
   }
-  function closeMenu() { menuOpen = false; capturing = null; panel.style.display = "none"; }
+  function closeMenu() { menuOpen = false; capturing = null; chordCap = null; panel.style.display = "none"; }
   function back() {
+    if (chordCap) { chordCap = null; renderPanel(); return; }
     if (capturing) { capturing = null; renderPanel(); return; }
     if (pageStack.length > 1) { pageStack.pop(); focus = 0; renderPanel(); }
     else closeMenu();
@@ -796,6 +818,7 @@
     else if (it.type === "action") { it.run(); }
     else if (it.type === "page") { pageStack.push(it.build()); focus = 0; renderPanel(); }
     else if (it.type === "rebind") { capturing = { logical: it.logical }; renderPanel(); }
+    else if (it.type === "chord") { startChordCapture(); }
     else if (it.type === "cycle" || it.type === "slider") { adjust(1); }
   }
   function captureButton(physIdx) {
@@ -829,13 +852,36 @@
       if (pad) {
         const b = pad.buttons;
         const isDown = (i) => b[i] && b[i].pressed;
-        const chord = isDown(8) && isDown(9);
+        // capDown also accepts a strongly-pulled analog trigger that reports a
+        // value but never flips .pressed on some pads — so triggers are bindable.
+        const capDown = (i) => b[i] && (b[i].pressed || b[i].value > 0.6);
+        const anyDown = () => b.some((x) => x && (x.pressed || x.value > 0.6));
+
+        // Recording a new menu shortcut: arm after a clean release (so the A
+        // press that started this doesn't count), collect the held combo, then
+        // commit it once everything is released.
+        if (chordCap) {
+          if (!chordCap.armed) {
+            if (!anyDown()) chordCap.armed = true;
+          } else {
+            for (let i = 0; i < b.length; i++) if (capDown(i)) { chordCap.acc.add(i); chordCap.had = true; }
+            if (chordCap.had && !anyDown()) {
+              if (chordCap.acc.size) { S.menuChord = Array.from(chordCap.acc).sort((x, y) => x - y); saveSettings(); }
+              chordCap = null; renderPanel();
+            }
+          }
+          prevBtn = b.map((x) => !!(x && x.pressed));
+          requestAnimationFrame(gamepadLoop);
+          return;
+        }
+
+        const chord = S.menuChord.length > 0 && S.menuChord.every((i) => isDown(i));
         if (chord && !chordPrev) { menuOpen ? closeMenu() : openMenu(); }
         chordPrev = chord;
         if (menuOpen) {
           if (capturing) {
             for (let i = 0; i < b.length; i++) {
-              if (b[i] && b[i].pressed && !prevBtn[i] && i !== 8 && i !== 9) { captureButton(i); break; }
+              if (capDown(i) && !prevBtn[i] && !S.menuChord.includes(i)) { captureButton(i); break; }
             }
           } else {
             if (edge("up", isDown(NAV.up))) move(-1);
@@ -857,6 +903,7 @@
     }
     if (e.key === "`") { menuOpen ? closeMenu() : openMenu(); e.preventDefault(); return; }
     if (!menuOpen) return;
+    if (chordCap) { if (e.key === "Escape") { chordCap = null; renderPanel(); } e.preventDefault(); return; }
     if (capturing) { if (e.key === "Escape") { capturing = null; renderPanel(); } e.preventDefault(); return; }
     switch (e.key) {
       case "ArrowUp": move(-1); e.preventDefault(); break;

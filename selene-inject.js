@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.5.0
+// @version      0.5.1
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -628,6 +628,20 @@
   let panel, menuOpen = false, pageStack = [], focus = 0, capturing = null;
   // Non-null while the user is recording a new menu-open shortcut on the pad.
   let chordCap = null;
+  let testMode = false; // live controller readout (which index each button fires)
+  function testReadout(pad, b) {
+    let btns = "";
+    for (let i = 0; i < b.length; i++) {
+      const on = b[i] && (b[i].pressed || b[i].value > 0.6);
+      const v = b[i] ? b[i].value : 0;
+      btns += `<span style="display:inline-block;min-width:32px;margin:2px;padding:4px 5px;border-radius:6px;text-align:center;font:11px ui-monospace,monospace;` +
+        `background:${on ? "rgba(184,192,255,.30)" : "var(--surface-2)"};border:1px solid ${on ? "var(--accent)" : "var(--line)"};color:${on ? "#fff" : "var(--muted)"}">` +
+        `${i}${v > 0.01 && v < 0.99 ? "<br>" + v.toFixed(2) : ""}</span>`;
+    }
+    const ax = (pad.axes || []).map((a, i) => `a${i} ${a.toFixed(2)}`).join("   ");
+    return `<div style="display:flex;flex-wrap:wrap;justify-content:center">${btns}</div>` +
+      `<div style="margin-top:8px;font:11px ui-monospace,monospace;color:var(--faint);text-align:center">axes: ${ax || "—"}</div>`;
+  }
   function startChordCapture() { chordCap = { armed: false, acc: new Set(), had: false }; renderPanel(); }
   function chordLabel(arr) {
     if (!arr || !arr.length) return "unset";
@@ -674,6 +688,7 @@
       { type: "chord", label: "Menu shortcut", note: "buttons that open Selene",
         get: () => S.menuChord },
       { type: "page", label: "Remap buttons", build: pgRemap },
+      { type: "action", label: "Controller test", run: () => { testMode = true; renderPanel(); } },
 
       { type: "header", label: "Streaming quality", icon: "signal" },
       { type: "cycle", label: "Preferred codec", note: "reconnect to apply",
@@ -761,6 +776,11 @@
       ? `<div class="sel-capov"><div><div class="sel-capm">${CRESCENT}</div>` +
         `<div class="sel-capt">Set menu shortcut</div>` +
         `<div class="sel-caps">Hold the button(s) that should open Selene, then release · Esc keeps the current one</div></div></div>`
+      : testMode
+      ? `<div class="sel-capov"><div style="width:92%;max-width:520px">` +
+        `<div class="sel-capt">Controller test</div>` +
+        `<div class="sel-caps">Press each button to see its index · triggers shown under "axes" are analog, not buttons · press your menu shortcut to exit</div>` +
+        `<div id="sel-test" style="margin-top:14px">…</div></div></div>`
       : "";
 
     panel.innerHTML =
@@ -785,11 +805,12 @@
 
   function openMenu() {
     if (menuOpen) return;
-    menuOpen = true; pageStack = [rootPage()]; focus = 0; capturing = null;
+    menuOpen = true; pageStack = [rootPage()]; focus = 0; capturing = null; chordCap = null; testMode = false;
     panel.style.display = "flex"; renderPanel();
   }
-  function closeMenu() { menuOpen = false; capturing = null; chordCap = null; panel.style.display = "none"; }
+  function closeMenu() { menuOpen = false; capturing = null; chordCap = null; testMode = false; panel.style.display = "none"; }
   function back() {
+    if (testMode) { testMode = false; renderPanel(); return; }
     if (chordCap) { chordCap = null; renderPanel(); return; }
     if (capturing) { capturing = null; renderPanel(); return; }
     if (pageStack.length > 1) { pageStack.pop(); focus = 0; renderPanel(); }
@@ -875,6 +896,18 @@
           return;
         }
 
+        // Live controller readout: update values in place, exit on the shortcut.
+        if (testMode) {
+          const el = document.getElementById("sel-test");
+          if (el) el.innerHTML = testReadout(pad, b);
+          const ex = S.menuChord.length > 0 && S.menuChord.every((i) => isDown(i));
+          if (ex && !chordPrev) { testMode = false; renderPanel(); }
+          chordPrev = ex;
+          prevBtn = b.map((x) => !!(x && x.pressed));
+          requestAnimationFrame(gamepadLoop);
+          return;
+        }
+
         const chord = S.menuChord.length > 0 && S.menuChord.every((i) => isDown(i));
         if (chord && !chordPrev) { menuOpen ? closeMenu() : openMenu(); }
         chordPrev = chord;
@@ -903,6 +936,7 @@
     }
     if (e.key === "`") { menuOpen ? closeMenu() : openMenu(); e.preventDefault(); return; }
     if (!menuOpen) return;
+    if (testMode) { if (e.key === "Escape") { testMode = false; renderPanel(); } e.preventDefault(); return; }
     if (chordCap) { if (e.key === "Escape") { chordCap = null; renderPanel(); } e.preventDefault(); return; }
     if (capturing) { if (e.key === "Escape") { capturing = null; renderPanel(); } e.preventDefault(); return; }
     switch (e.key) {

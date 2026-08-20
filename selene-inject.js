@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.5.5
+// @version      0.5.6
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -52,6 +52,7 @@
     hudMetrics: {
       res: true, fps: true, bitrate: true, rtt: true,
       dropped: true, loss: true, jitter: true, codec: true,
+      freezes: true, decode: true,
     },
     deadzone: 12,
     vibration: 100,
@@ -533,7 +534,7 @@
   // 6. STATS HUD  (+ rolling telemetry for sparklines)
   // ========================================================================
   let hud;
-  let last = { bytes: 0, ts: 0, framesDropped: 0, framesDecoded: 0 };
+  let last = { bytes: 0, ts: 0, framesDropped: 0, framesDecoded: 0, decodeTime: 0, freezeCount: 0 };
   const hist = { mbps: [], fps: [] };
   const HIST_MAX = 48;
 
@@ -579,6 +580,7 @@
         if (r.type === "codec") codecStat = codecStat || r;
       });
       let fps = 0, dropPct = 0, lossPct = 0, jitter = 0, mbps = 0, res = "—", codec = "—", rtt = 0;
+      let decodeMs = 0, freezeCnt = 0, freezeNew = 0;
       const now = performance.now();
       if (inbound) {
         fps = Math.round(inbound.framesPerSecond || 0);
@@ -587,9 +589,16 @@
         const dDec = (inbound.framesDecoded || 0) - last.framesDecoded;
         dropPct = dDec > 0 ? (dDrop / (dDec + dDrop)) * 100 : 0;
         jitter = Math.round((inbound.jitter || 0) * 1000);
+        // ms of decode work per frame — climbs when the device struggles with
+        // the served codec (the choppy-cutscene signal).
+        const dDecTime = (inbound.totalDecodeTime || 0) - last.decodeTime;
+        decodeMs = dDec > 0 ? (dDecTime / dDec) * 1000 : 0;
+        freezeCnt = inbound.freezeCount || 0;
+        freezeNew = freezeCnt - last.freezeCount;
         if (last.ts) mbps = ((inbound.bytesReceived - last.bytes) * 8) / ((now - last.ts) / 1000) / 1e6;
         last = { bytes: inbound.bytesReceived, ts: now,
-          framesDropped: inbound.framesDropped || 0, framesDecoded: inbound.framesDecoded || 0 };
+          framesDropped: inbound.framesDropped || 0, framesDecoded: inbound.framesDecoded || 0,
+          decodeTime: inbound.totalDecodeTime || 0, freezeCount: freezeCnt };
         if (inbound.packetsLost != null && inbound.packetsReceived != null) {
           const tot = inbound.packetsLost + inbound.packetsReceived;
           lossPct = tot > 0 ? (inbound.packetsLost / tot) * 100 : 0;
@@ -609,6 +618,8 @@
       if (m.bitrate) grid += hrow("bitrate", mbps.toFixed(1) + " Mbps");
       if (m.rtt) grid += hrow("rtt", rtt + " ms", mColor(rtt, 60, 100));
       if (m.dropped) grid += hrow("dropped", dropPct.toFixed(1) + "%", mColor(dropPct, 1, 5));
+      if (m.freezes) grid += hrow("freezes", String(freezeCnt), mColor(freezeNew, 1, 1));
+      if (m.decode) grid += hrow("decode", decodeMs.toFixed(1) + " ms", mColor(decodeMs, 12, 20));
       if (m.loss) grid += hrow("loss", lossPct.toFixed(2) + "%", mColor(lossPct, 0.5, 2));
       if (m.jitter) grid += hrow("jitter", jitter + " ms", mColor(jitter, 20, 40));
       if (m.codec) grid += hrow("codec", codec);
@@ -663,7 +674,8 @@
 
   function pgMetrics() {
     const keys = [["res", "Resolution"], ["fps", "FPS"], ["bitrate", "Bitrate"], ["rtt", "RTT"],
-      ["dropped", "Dropped frames"], ["loss", "Packet loss"], ["jitter", "Jitter"], ["codec", "Codec"]];
+      ["dropped", "Dropped frames"], ["freezes", "Freezes"], ["decode", "Decode time"],
+      ["loss", "Packet loss"], ["jitter", "Jitter"], ["codec", "Codec"]];
     return { title: "Choose which metrics show",
       items: keys.map(([k, label]) => ({ type: "toggle", label,
         get: () => S.hudMetrics[k], set: (v) => { S.hudMetrics[k] = v; saveSettings(); } })) };

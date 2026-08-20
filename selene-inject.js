@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.5.2
+// @version      0.5.3
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -165,7 +165,7 @@
   font-size:10.5px;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums}
 .sel-rule{height:1px;margin:0 18px;background:linear-gradient(90deg,transparent,var(--dim) 18%,var(--dim) 82%,transparent)}
 
-.sel-body{overflow-y:auto;padding:6px 10px 14px;scrollbar-width:thin;scrollbar-color:rgba(184,192,255,.32) transparent}
+.sel-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:6px 10px 14px;scrollbar-width:thin;scrollbar-color:rgba(184,192,255,.32) transparent}
 .sel-body::-webkit-scrollbar{width:9px}
 .sel-body::-webkit-scrollbar-thumb{background:rgba(184,192,255,.26);border-radius:9px;border:2px solid transparent;background-clip:content-box}
 .sel-body::-webkit-scrollbar-track{background:transparent}

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.5.4
+// @version      0.5.5
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -55,6 +55,7 @@
     },
     deadzone: 12,
     vibration: 100,
+    forceStdMapping: false, // relabel the pad "standard" so Luna binds it (D-input fix)
     remap: {},
     menuChord: [8, 9], // physical button indices that TOGETHER open Selene (rebindable)
     preferredCodec: "auto",
@@ -466,11 +467,15 @@
       return b;
     });
   }
+  // Luna typically only binds to gamepads reporting mapping:"standard". A pad in
+  // D-input mode often reports "" (non-standard) even with standard button order,
+  // so Luna ignores it. Relabel it "standard" when the user opts in.
+  const mapOf = (p) => (S.forceStdMapping ? "standard" : p.mapping);
   function neutralPads(raw) {
     const list = [];
     for (const p of raw) {
       if (!p) { list.push(null); continue; }
-      list.push({ id: p.id, index: p.index, connected: p.connected, mapping: p.mapping,
+      list.push({ id: p.id, index: p.index, connected: p.connected, mapping: mapOf(p),
         timestamp: p.timestamp, vibrationActuator: p.vibrationActuator,
         axes: new Array(p.axes.length).fill(0),
         buttons: Array.from(p.buttons).map(() => ({ pressed: false, touched: false, value: 0 })) });
@@ -481,7 +486,7 @@
     const list = [];
     for (const p of raw) {
       if (!p) { list.push(null); continue; }
-      list.push({ id: p.id, index: p.index, connected: p.connected, mapping: p.mapping,
+      list.push({ id: p.id, index: p.index, connected: p.connected, mapping: mapOf(p),
         timestamp: p.timestamp, vibrationActuator: p.vibrationActuator,
         axes: applyDeadzone(Array.from(p.axes), S.deadzone),
         buttons: remapButtons(p.buttons) });
@@ -691,6 +696,8 @@
         get: () => S.deadzone, set: (v) => { S.deadzone = v; saveSettings(); } },
       { type: "slider", label: "Vibration", min: 0, max: 100, step: 10, unit: "%",
         get: () => S.vibration, set: (v) => { S.vibration = v; saveSettings(); } },
+      { type: "toggle", label: "Force standard mapping", note: "if Luna ignores your pad (D mode)",
+        get: () => S.forceStdMapping, set: (v) => { S.forceStdMapping = v; saveSettings(); } },
       { type: "chord", label: "Menu shortcut", note: "buttons that open Selene",
         get: () => S.menuChord },
       { type: "page", label: "Remap buttons", build: pgRemap },

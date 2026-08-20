@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.5.7
+// @version      0.6.0
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -538,6 +538,45 @@
   const hist = { mbps: [], fps: [] };
   const HIST_MAX = 48;
 
+  // --- Session recorder -----------------------------------------------------
+  // Samples every stat once a second while a stream is live (no HUD needed),
+  // summarizes on stream end, keeps the last 3 sessions. Read it afterwards in
+  // Settings -> Stats overlay -> Session report to diagnose lag offline:
+  // high rtt/jitter = network, high decode = device/codec.
+  const SESS_KEY = "selene.sessions.v1";
+  const SESS_CAP = 7200; // ~2h at 1 sample/s
+  let sess = null, wasStreaming = false;
+  function sessPush(a, v) { a.push(v); if (a.length > SESS_CAP) a.shift(); }
+  function startSession() {
+    sess = { t0: Date.now(), n: 0, codec: "—", res: "—", lossMax: 0, dropMax: 0, freezes: 0,
+      arr: { rtt: [], jitter: [], decode: [], fps: [], mbps: [] } };
+  }
+  function stat1(a) {
+    if (!a.length) return { avg: 0, p95: 0, max: 0, min: 0 };
+    const s = [...a].sort((x, y) => x - y);
+    return { avg: a.reduce((t, v) => t + v, 0) / a.length,
+      p95: s[Math.min(s.length - 1, Math.floor(s.length * 0.95))],
+      max: s[s.length - 1], min: s[0] };
+  }
+  function summarize(x) {
+    return { at: x.t0, mins: Math.max(1, Math.round((Date.now() - x.t0) / 60000)),
+      codec: x.codec, res: x.res, lossMax: x.lossMax, dropMax: x.dropMax, freezes: x.freezes,
+      rtt: stat1(x.arr.rtt), jitter: stat1(x.arr.jitter), decode: stat1(x.arr.decode),
+      fps: stat1(x.arr.fps), mbps: stat1(x.arr.mbps) };
+  }
+  function loadSessions() {
+    try { const r = localStorage.getItem(SESS_KEY); return r ? JSON.parse(r) : []; } catch (e) { return []; }
+  }
+  function finalizeSession() {
+    try {
+      if (sess && sess.n >= 5) {
+        const all = loadSessions(); all.unshift(summarize(sess));
+        localStorage.setItem(SESS_KEY, JSON.stringify(all.slice(0, 3)));
+      }
+    } catch (e) {}
+    sess = null;
+  }
+
   function buildHud() {
     hud = document.createElement("div");
     hud.id = "selene-hud"; hud.className = "sel-scope";
@@ -570,7 +609,11 @@
   async function pollStats() {
     injectSvgFilter();
     applyVideoFilter();
-    if (!(hud && S.hudEnabled && peer && peer.getStats)) return;
+    const streaming = isStreaming();
+    if (streaming && !wasStreaming) startSession();
+    if (!streaming && wasStreaming) finalizeSession();
+    wasStreaming = streaming;
+    if (!(peer && peer.getStats)) return;
     try {
       const stats = await peer.getStats();
       let inbound, pair, codecStat;
@@ -610,6 +653,20 @@
       if (mbps > 0 || hist.mbps.length) { hist.mbps.push(Math.max(0, mbps)); if (hist.mbps.length > HIST_MAX) hist.mbps.shift(); }
       if (fps > 0 || hist.fps.length) { hist.fps.push(fps); if (hist.fps.length > HIST_MAX) hist.fps.shift(); }
 
+      // Record this sample into the running session (independent of the HUD).
+      if (sess && inbound) {
+        sess.n++;
+        sessPush(sess.arr.rtt, rtt); sessPush(sess.arr.jitter, jitter);
+        sessPush(sess.arr.decode, decodeMs); sessPush(sess.arr.fps, fps);
+        sessPush(sess.arr.mbps, mbps);
+        if (lossPct > sess.lossMax) sess.lossMax = lossPct;
+        if (dropPct > sess.dropMax) sess.dropMax = dropPct;
+        sess.freezes = freezeCnt;
+        if (res !== "—") sess.res = res;
+        if (codec !== "—") sess.codec = codec;
+      }
+
+      if (!(hud && S.hudEnabled)) return; // sampling done; skip HUD render when hidden
       const m = S.hudMetrics;
       const dot = mColor(rtt, 60, 100);
       let grid = "";
@@ -680,6 +737,35 @@
       items: keys.map(([k, label]) => ({ type: "toggle", label,
         get: () => S.hudMetrics[k], set: (v) => { S.hudMetrics[k] = v; saveSettings(); } })) };
   }
+  function fmtMs(x) { return `${Math.round(x.avg)} · p95 ${Math.round(x.p95)} · max ${Math.round(x.max)}`; }
+  function sessionHtml(s) {
+    const row = (k, v, c) => `<div style="display:flex;justify-content:space-between;gap:12px;font:11px ui-monospace,monospace;line-height:1.7">` +
+      `<span style="color:var(--faint)">${k}</span><span style="color:${c || "#eef0f8"}">${v}</span></div>`;
+    return row("rtt ms", fmtMs(s.rtt), mColor(s.rtt.p95, 60, 100)) +
+      row("jitter ms", fmtMs(s.jitter), mColor(s.jitter.p95, 20, 40)) +
+      row("decode ms", `${s.decode.avg.toFixed(1)} · p95 ${s.decode.p95.toFixed(1)} · max ${s.decode.max.toFixed(1)}`, mColor(s.decode.p95, 12, 20)) +
+      row("fps", `${Math.round(s.fps.avg)} avg · ${Math.round(s.fps.min)} min`, mColor(30 - s.fps.min, 12, 20)) +
+      row("loss / drop", `${s.lossMax.toFixed(2)}% / ${s.dropMax.toFixed(1)}% peak`, mColor(s.lossMax, 0.5, 2)) +
+      row("freezes", String(s.freezes), mColor(s.freezes, 1, 5));
+  }
+  function pgSessions() {
+    const list = loadSessions();
+    const items = [];
+    if (!list.length) {
+      items.push({ type: "info", label: "No sessions recorded yet",
+        html: `<span style="font:11px ui-monospace,monospace;color:var(--faint)">Play a game — a summary is saved automatically when the stream ends.</span>` });
+    } else {
+      list.forEach((s, i) => {
+        const ago = Math.max(0, Math.round((Date.now() - s.at) / 60000));
+        items.push({ type: "info",
+          label: `${i === 0 ? "Latest" : ago + "m ago"} · ${s.mins}m · ${s.res} · ${s.codec}`,
+          html: sessionHtml(s) });
+      });
+    }
+    items.push({ type: "action", label: "Clear sessions",
+      run: () => { try { localStorage.removeItem(SESS_KEY); } catch (e) {} pageStack[pageStack.length - 1] = pgSessions(); focus = 0; renderPanel(); } });
+    return { title: "Recent streams — avg / p95 / max", items };
+  }
   function pgRemap() {
     const items = LOGICAL.map(([name, idx]) => ({ type: "rebind", label: name, logical: idx }));
     items.push({ type: "action", label: "Reset to default mapping", run: () => { S.remap = {}; saveSettings(); } });
@@ -702,6 +788,7 @@
       { type: "slider", label: "Opacity", min: 20, max: 100, step: 5, unit: "%",
         get: () => S.hudOpacity, set: (v) => { S.hudOpacity = v; saveSettings(); applyHudStyle(); } },
       { type: "page", label: "Choose metrics", build: pgMetrics },
+      { type: "page", label: "Session report", build: pgSessions },
 
       { type: "header", label: "Controller", icon: "pad" },
       { type: "slider", label: "Stick deadzone", min: 0, max: 40, step: 1, unit: "%",
@@ -764,6 +851,13 @@
         rows += it.label
           ? `<div class="sel-sec"><span class="sel-ic">${ico(it.icon)}</span><span class="sel-eye">${it.label}</span><span class="sel-secrule"></span></div>`
           : `<div style="height:6px"></div>`;
+        return;
+      }
+      if (it.type === "info") {
+        const onI = i === focusedRealIdx;
+        rows += `<div class="sel-row ${onI ? "on" : ""}" style="flex-direction:column;align-items:stretch;gap:6px">` +
+          `<div style="display:flex;align-items:center;gap:8px"><span class="sel-mk">${CRESCENT}</span><span class="sel-lbl" style="flex:1">${it.label}</span></div>` +
+          `<div style="padding-left:23px">${it.html || ""}</div></div>`;
         return;
       }
       const on = i === focusedRealIdx;

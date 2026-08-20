@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.6.0
+// @version      0.6.1
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -1109,9 +1109,36 @@
     requestAnimationFrame(gamepadLoop);
     // Keep zoom correct as streams start/stop even if a peer event is missed.
     setInterval(applyZoom, 1000);
+    installKeyboardBridge();
     toast("Selene ready — hold View + Menu for settings");
     const uad = navigator.userAgentData || {};
     log("ready — platform:", uad.platform, "mobile:", uad.mobile, "zoom:", S.uiZoom);
+  }
+  // Android TV hides the soft keyboard while a controller is connected. When a
+  // real text field gains focus, ask the native bridge to force the IME up (and
+  // dismiss it on blur). No-op in a browser / Tampermonkey (no SeleneNative).
+  function isEditable(el) {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = el.tagName;
+    if (tag === "TEXTAREA") return true;
+    if (tag === "INPUT") {
+      const t = (el.getAttribute("type") || "text").toLowerCase();
+      return !["button", "submit", "reset", "checkbox", "radio", "range",
+        "color", "file", "image", "hidden"].includes(t);
+    }
+    return false;
+  }
+  function installKeyboardBridge() {
+    const nat = window.SeleneNative;
+    if (!nat || !nat.showKeyboard) return;
+    document.addEventListener("focusin", (e) => {
+      try { if (isEditable(e.target)) nat.showKeyboard(); } catch (err) {}
+    }, true);
+    document.addEventListener("focusout", (e) => {
+      try { if (isEditable(e.target)) nat.hideKeyboard(); } catch (err) {}
+    }, true);
+    log("keyboard bridge installed");
   }
   function toast(msg) {
     const t = document.createElement("div");

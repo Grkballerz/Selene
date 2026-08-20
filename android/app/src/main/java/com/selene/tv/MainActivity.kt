@@ -1,10 +1,13 @@
 package com.selene.tv
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
+import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -39,6 +42,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Pan the view up for the soft keyboard so the focused field stays visible.
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN)
         goImmersive()
 
         web = WebView(this).apply {
@@ -56,6 +61,12 @@ class MainActivity : ComponentActivity() {
                 loadWithOverviewMode = true
                 textZoom = 100
             }
+
+            // Android TV suppresses the soft keyboard while a game controller is
+            // connected (assumes you'll type on "hardware"). selene-inject.js
+            // calls this bridge on text-field focus to force the IME up.
+            isFocusableInTouchMode = true
+            addJavascriptInterface(KeyboardBridge(), "SeleneNative")
 
             webViewClient = object : WebViewClient() {
                 // keep all navigation inside the app
@@ -121,5 +132,30 @@ class MainActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) goImmersive()
+    }
+
+    /**
+     * JS bridge so the injected shim can force the soft keyboard up/down. Android
+     * TV hides the IME when a controller is connected; SHOW_FORCED overrides that.
+     * Only these two annotated methods are exposed to page JS.
+     */
+    inner class KeyboardBridge {
+        @JavascriptInterface
+        fun showKeyboard() {
+            runOnUiThread {
+                web.requestFocus()
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                @Suppress("DEPRECATION")
+                imm.showSoftInput(web, InputMethodManager.SHOW_FORCED)
+            }
+        }
+
+        @JavascriptInterface
+        fun hideKeyboard() {
+            runOnUiThread {
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.hideSoftInputFromWindow(web.windowToken, 0)
+            }
+        }
     }
 }

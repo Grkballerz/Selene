@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.5.3
+// @version      0.5.4
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -632,6 +632,7 @@
   // Non-null while the user is recording a new menu-open shortcut on the pad.
   let chordCap = null;
   let testMode = false; // live controller readout (which index each button fires)
+  let testKeys = [];    // recent keyboard events seen while the test screen is open
   function testReadout(pad, b) {
     let btns = "";
     for (let i = 0; i < b.length; i++) {
@@ -642,8 +643,10 @@
         `${i}${v > 0.01 && v < 0.99 ? "<br>" + v.toFixed(2) : ""}</span>`;
     }
     const ax = (pad.axes || []).map((a, i) => `a${i} ${a.toFixed(2)}`).join("   ");
+    const keys = testKeys.length ? testKeys.join("   ") : "—";
     return `<div style="display:flex;flex-wrap:wrap;justify-content:center">${btns}</div>` +
-      `<div style="margin-top:8px;font:11px ui-monospace,monospace;color:var(--faint);text-align:center">axes: ${ax || "—"}</div>`;
+      `<div style="margin-top:8px;font:11px ui-monospace,monospace;color:var(--faint);text-align:center">axes: ${ax || "—"}</div>` +
+      `<div style="margin-top:6px;font:11px ui-monospace,monospace;color:var(--accent);text-align:center">keys: ${keys}</div>`;
   }
   function startChordCapture() { chordCap = { armed: false, acc: new Set(), had: false }; renderPanel(); }
   function chordLabel(arr) {
@@ -691,7 +694,7 @@
       { type: "chord", label: "Menu shortcut", note: "buttons that open Selene",
         get: () => S.menuChord },
       { type: "page", label: "Remap buttons", build: pgRemap },
-      { type: "action", label: "Controller test", run: () => { testMode = true; renderPanel(); } },
+      { type: "action", label: "Controller test", run: () => { testMode = true; testKeys = []; renderPanel(); } },
 
       { type: "header", label: "Streaming quality", icon: "signal" },
       { type: "cycle", label: "Preferred codec", note: "reconnect to apply",
@@ -949,7 +952,13 @@
     }
     if (e.key === "`") { menuOpen ? closeMenu() : openMenu(); e.preventDefault(); return; }
     if (!menuOpen) return;
-    if (testMode) { if (e.key === "Escape") { testMode = false; renderPanel(); } e.preventDefault(); return; }
+    if (testMode) {
+      // Record every key so buttons Android delivers as key events (not gamepad
+      // buttons) become visible. Exit via the pad's menu shortcut, or ` in a browser.
+      testKeys.unshift((e.key || "?") + (e.keyCode ? "(" + e.keyCode + ")" : ""));
+      testKeys = testKeys.slice(0, 6);
+      e.preventDefault(); return;
+    }
     if (chordCap) { if (e.key === "Escape") { chordCap = null; renderPanel(); } e.preventDefault(); return; }
     if (capturing) { if (e.key === "Escape") { capturing = null; renderPanel(); } e.preventDefault(); return; }
     switch (e.key) {

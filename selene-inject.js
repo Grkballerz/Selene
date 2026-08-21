@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.6.6
+// @version      0.6.7
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -112,7 +112,14 @@
       const z = isStreaming() ? 1 : Math.max(0.5, Math.min(1, S.uiZoom / 100));
       if (z === _lastZoom) return;
       _lastZoom = z;
-      document.documentElement.style.zoom = String(z);
+      // z===1 must REMOVE the property, not set "1": any zoom value keeps a
+      // compositing context that blocks the <video> hardware-overlay promotion,
+      // forcing slow GPU texture compositing of every frame (decode stalls,
+      // freezes). Removing it lets gameplay use the fast overlay path.
+      const de = document.documentElement;
+      if (z === 1) de.style.removeProperty("zoom");
+      else de.style.zoom = String(z);
+      log("zoom", z === 1 ? "off(removed)" : z, "streaming", isStreaming());
     } catch (e) { log("zoom apply failed", e); }
   }
 

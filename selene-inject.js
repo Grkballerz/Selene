@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.6.2
+// @version      0.6.3
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -483,15 +483,33 @@
     }
     return list;
   }
+  // Hand Luna a faithful gamepad: a thin Proxy over the REAL Gamepad that only
+  // overrides mapping / axes / buttons when we actually change them. The old
+  // approach rebuilt plain objects every frame (buttons as {pressed,value},
+  // not real GamepadButtons), which Luna's InputSender couldn't serialize
+  // ("Could not serialize streaming gamepad") — starving the game of input.
+  // When nothing needs changing we return the raw pad untouched.
+  function wrapPad(p) {
+    if (!p) return null;
+    const useDz = S.deadzone > 0;
+    const useRemap = S.remap && Object.keys(S.remap).length > 0;
+    const useMap = S.forceStdMapping;
+    if (!useDz && !useRemap && !useMap) return p;
+    const dzAxes = useDz ? applyDeadzone(Array.from(p.axes), S.deadzone) : null;
+    const rb = useRemap ? remapButtons(p.buttons) : null;
+    return new Proxy(p, {
+      get(t, prop) {
+        if (prop === "mapping" && useMap) return "standard";
+        if (prop === "axes" && dzAxes) return dzAxes;
+        if (prop === "buttons" && rb) return rb;
+        const v = t[prop];
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    });
+  }
   function processPads(raw) {
     const list = [];
-    for (const p of raw) {
-      if (!p) { list.push(null); continue; }
-      list.push({ id: p.id, index: p.index, connected: p.connected, mapping: mapOf(p),
-        timestamp: p.timestamp, vibrationActuator: p.vibrationActuator,
-        axes: applyDeadzone(Array.from(p.axes), S.deadzone),
-        buttons: remapButtons(p.buttons) });
-    }
+    for (const p of raw) list.push(wrapPad(p));
     return list;
   }
   if (_getGamepads) {

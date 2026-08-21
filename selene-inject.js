@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.6.4
+// @version      0.6.5
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -101,12 +101,12 @@
   // heroes are autoplaying trailers we must ignore.
   // ========================================================================
   let _lastZoom = null;
-  function isStreaming() {
-    try {
-      return !!(peer && (peer.connectionState === "connected" ||
-        peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed"));
-    } catch (e) { return false; }
-  }
+  // Set true when video frames are actually flowing (game streaming), driven by
+  // pollStats. The old peer.connectionState check was unreliable — Luna reassigns
+  // our `peer` to non-streaming connections — so zoom never dropped to 100% during
+  // play and the 80% CSS scale stalled the video pipeline (freezes).
+  let streamActive = false, lastActiveTs = 0;
+  function isStreaming() { return streamActive; }
   function applyZoom() {
     try {
       const z = isStreaming() ? 1 : Math.max(0.5, Math.min(1, S.uiZoom / 100));
@@ -563,7 +563,7 @@
   // high rtt/jitter = network, high decode = device/codec.
   const SESS_KEY = "selene.sessions.v1";
   const SESS_CAP = 7200; // ~2h at 1 sample/s
-  let sess = null, wasStreaming = false;
+  let sess = null;
   function sessPush(a, v) { a.push(v); if (a.length > SESS_CAP) a.shift(); }
   function startSession() {
     sess = { t0: Date.now(), n: 0, codec: "—", res: "—", lossMax: 0, dropMax: 0, freezes: 0,
@@ -627,11 +627,10 @@
   async function pollStats() {
     injectSvgFilter();
     applyVideoFilter();
-    const streaming = isStreaming();
-    if (streaming && !wasStreaming) startSession();
-    if (!streaming && wasStreaming) finalizeSession();
-    wasStreaming = streaming;
-    if (!(peer && peer.getStats)) return;
+    if (!(peer && peer.getStats)) {
+      if (streamActive) { streamActive = false; finalizeSession(); applyZoom(); }
+      return;
+    }
     try {
       const stats = await peer.getStats();
       let inbound, pair, codecStat;
@@ -647,6 +646,12 @@
       let fps = 0, dropPct = 0, lossPct = 0, jitter = 0, mbps = 0, res = "—", codec = "—", rtt = 0;
       let decodeMs = 0, freezeCnt = 0, freezeNew = 0;
       const now = performance.now();
+      // Streaming = video frames actually decoding. A 3.5s grace keeps a brief
+      // in-game freeze from flipping zoom off (which would itself stall the video).
+      if (inbound && (inbound.framesDecoded || 0) > last.framesDecoded) lastActiveTs = now;
+      const active = lastActiveTs > 0 && (now - lastActiveTs) < 3500;
+      if (active && !streamActive) { streamActive = true; startSession(); applyZoom(); }
+      else if (!active && streamActive) { streamActive = false; finalizeSession(); applyZoom(); }
       if (inbound) {
         fps = Math.round(inbound.framesPerSecond || 0);
         if (inbound.frameWidth) res = `${inbound.frameWidth}x${inbound.frameHeight}`;

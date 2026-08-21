@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.7.2
+// @version      0.7.3
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -64,6 +64,7 @@
     clarity: 0,
     saturation: 100,
     uiZoom: 80, // whole-page zoom %; shrinks Luna's TV UI, auto-100 while streaming
+    autoFullscreen: false, // auto element-fullscreen the game video (hardware overlay)
   };
 
   const STORE_KEY = "selene.settings.v1";
@@ -123,10 +124,17 @@
     } catch (e) { log("zoom apply failed", e); }
   }
 
-  // Largest <video> = the game stream.
+  // Collect <video> across the whole tree INCLUDING shadow roots — Luna renders
+  // the stream inside a web component, so a plain querySelectorAll misses it.
+  function collectVideos(root, out) {
+    if (!root || !root.querySelectorAll) return out;
+    root.querySelectorAll("video").forEach((v) => out.push(v));
+    root.querySelectorAll("*").forEach((el) => { if (el.shadowRoot) collectVideos(el.shadowRoot, out); });
+    return out;
+  }
   function findGameVideo() {
     let best = null, area = 0;
-    document.querySelectorAll("video").forEach((v) => {
+    collectVideos(document, []).forEach((v) => {
       const r = v.getBoundingClientRect();
       const a = r.width * r.height;
       if (a > area) { area = a; best = v; }
@@ -135,19 +143,35 @@
   }
   // Put the game video into element-fullscreen so the native WebChromeClient
   // hosts its surface on a hardware overlay plane (bypasses page compositing).
-  // MUST be called inside a user gesture (Fullscreen API requirement) — hence a
-  // menu action, ideally selected with the REMOTE (Enter = a real gesture).
-  function toggleVideoFullscreen() {
+  // MUST be called inside a user gesture (Fullscreen API requirement).
+  function enterVideoFullscreen() {
     try {
-      if (document.fullscreenElement) { document.exitFullscreen(); log("fs exit"); return; }
+      if (document.fullscreenElement) return true;
+      const all = collectVideos(document, []);
       const v = findGameVideo();
-      if (!v) { log("fs: no video found"); return; }
+      if (!v) { log("fs: no video (searched", all.length, "incl shadow)"); return false; }
+      const r = v.getBoundingClientRect();
       const req = v.requestFullscreen || v.webkitRequestFullscreen || v.webkitEnterFullscreen;
-      if (!req) { log("fs: no requestFullscreen"); return; }
+      if (!req) { log("fs: no requestFullscreen on video"); return false; }
       const p = req.call(v);
-      if (p && p.catch) p.catch((e) => log("fs request rejected:", e && e.message));
-      log("fs requested");
-    } catch (e) { log("fs toggle failed", e && e.message); }
+      if (p && p.catch) p.catch((e) => log("fs rejected:", e && e.message));
+      log("fs requested —", Math.round(r.width) + "x" + Math.round(r.height), "paused", v.paused, "of", all.length, "videos");
+      return true;
+    } catch (e) { log("fs enter failed", e && e.message); return false; }
+  }
+  function toggleVideoFullscreen() {
+    if (document.fullscreenElement) { try { document.exitFullscreen(); log("fs exit"); } catch (e) {} return; }
+    enterVideoFullscreen();
+  }
+  // Auto-enter fullscreen while streaming (rides whatever gesture — remote key or
+  // gamepad button — the WebView honors), throttled, until it succeeds.
+  let _lastFsTry = 0;
+  function maybeAutoFullscreen() {
+    if (!S.autoFullscreen || !streamActive || document.fullscreenElement) return;
+    const now = performance.now();
+    if (now - _lastFsTry < 1200) return;
+    _lastFsTry = now;
+    enterVideoFullscreen();
   }
 
   // ========================================================================
@@ -880,7 +904,9 @@
       { type: "slider", label: "Zoom", min: 50, max: 100, step: 5, unit: "%",
         note: "shrinks Luna · 100% while streaming",
         get: () => S.uiZoom, set: (v) => { S.uiZoom = v; saveSettings(); applyZoom(); } },
-      { type: "action", label: "Fullscreen video", note: "smoother · hides HUD · Back exits · use remote",
+      { type: "toggle", label: "Auto fullscreen video", note: "overlay path · smoother · hides HUD in-game",
+        get: () => S.autoFullscreen, set: (v) => { S.autoFullscreen = v; saveSettings(); _lastFsTry = 0; } },
+      { type: "action", label: "Fullscreen video now", note: "manual · Back exits",
         run: () => { toggleVideoFullscreen(); closeMenu(); } },
 
       { type: "header", label: "Video", icon: "contrast" },
@@ -1116,6 +1142,12 @@
           return;
         }
 
+        // On a fresh button press while streaming, try fullscreen — a gamepad
+        // press counts as user activation in recent Chromium.
+        if (streamActive && S.autoFullscreen && !document.fullscreenElement) {
+          for (let i = 0; i < b.length; i++) if (b[i] && b[i].pressed && !prevBtn[i]) { maybeAutoFullscreen(); break; }
+        }
+
         const chord = S.menuChord.length > 0 && S.menuChord.every((i) => isDown(i));
         if (chord && !chordPrev) { log("chord fired, menuOpen was", menuOpen); menuOpen ? closeMenu() : openMenu(); }
         chordPrev = chord;
@@ -1138,6 +1170,8 @@
     }
   }
   window.addEventListener("keydown", (e) => {
+    // A keydown is a real user gesture — the reliable moment to enter fullscreen.
+    maybeAutoFullscreen();
     if (!menuOpen && (e.key === "h" || e.key === "H")) {
       S.hudEnabled = !S.hudEnabled; saveSettings(); applyHudStyle(); return;
     }

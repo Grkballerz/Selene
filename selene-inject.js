@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.6.5
+// @version      0.6.6
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -773,7 +773,8 @@
       row("decode ms", `${s.decode.avg.toFixed(1)} · p95 ${s.decode.p95.toFixed(1)} · max ${s.decode.max.toFixed(1)}`, mColor(s.decode.p95, 12, 20)) +
       row("fps", `${Math.round(s.fps.avg)} avg · ${Math.round(s.fps.min)} min`, mColor(30 - s.fps.min, 12, 20)) +
       row("loss / drop", `${s.lossMax.toFixed(2)}% / ${s.dropMax.toFixed(1)}% peak`, mColor(s.lossMax, 0.5, 2)) +
-      row("freezes", String(s.freezes), mColor(s.freezes, 1, 5));
+      row("freezes", `${s.freezes} · ${(s.freezes / Math.max(1, s.mins)).toFixed(1)}/min`,
+        mColor(s.freezes / Math.max(1, s.mins), 15, 40));
   }
   function pgSessions() {
     const list = loadSessions();

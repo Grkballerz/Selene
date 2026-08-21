@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.7.0
+// @version      0.7.1
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -166,7 +166,7 @@
 #selene-panel{
   position:fixed;inset:0;z-index:2147483600;display:none;
   align-items:center;justify-content:center;
-  background:rgba(5,6,12,.5);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+  background:rgba(5,6,12,.82);
   animation:sel-ov .18s ease-out;
 }
 @keyframes sel-ov{from{opacity:0}to{opacity:1}}
@@ -241,7 +241,7 @@
 .sel-chip{font:12px ui-monospace,monospace;color:var(--muted);padding:3px 9px;border-radius:7px;background:var(--surface-2);border:1px solid var(--line);font-variant-numeric:tabular-nums}
 .sel-chip.a{color:var(--accent);border-color:rgba(184,192,255,.4)}
 
-.sel-capov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(6,8,16,.86);backdrop-filter:blur(2px);border-radius:20px;animation:sel-ov .14s}
+.sel-capov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(6,8,16,.95);border-radius:20px;animation:sel-ov .14s}
 .sel-capm{width:42px;height:42px;color:var(--accent);margin:0 auto 12px;filter:drop-shadow(0 0 13px rgba(184,192,255,.6));animation:sel-pulse 1.6s ease-in-out infinite}
 @keyframes sel-pulse{0%,100%{opacity:.72;transform:scale(1)}50%{opacity:1;transform:scale(1.09)}}
 .sel-capt{color:#fff;font-size:17px;font-weight:600;margin-bottom:6px;text-align:center}

@@ -34,9 +34,10 @@
 
 ## Infra / deploy
 - GitHub Releases via GitHub Actions
+- APK signing: committed non-secret `debug.keystore` for local builds; CI-secret release keystore (`SIGNING_KEYSTORE_FILE` env var + related secrets) for release builds — same signing identity across releases enables stable in-place APK updates on device
 
 ## Datastores
 - none
 
 ---
-_Detected from: README.md, build.gradle.kts, AndroidManifest.xml, MainActivity.kt, build.yml, selene-inject.js on 2026-08-19_
+_Detected from: README.md, build.gradle.kts, AndroidManifest.xml, MainActivity.kt, build.yml, selene-inject.js on 2026-08-20_

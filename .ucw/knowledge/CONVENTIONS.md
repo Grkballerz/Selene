@@ -16,7 +16,7 @@
 - _to be filled in_
 
 ## Logging
-- _to be filled in_
+- `selene-inject.js` logs via `console.*`; `MainActivity.kt`'s `WebChromeClient.onConsoleMessage` mirrors these to Android `Log.i` under tag `SeleneWeb` so they're visible in `adb logcat` for release builds (no debug-only console)
 
 ## Imports / module boundaries
 - _to be filled in_

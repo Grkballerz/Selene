@@ -6,8 +6,10 @@ import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
+import android.widget.FrameLayout
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
@@ -32,6 +34,11 @@ import androidx.webkit.WebViewFeature
 class MainActivity : ComponentActivity() {
 
     private lateinit var web: WebView
+    private lateinit var rootLayout: FrameLayout
+
+    // Fullscreen-video state (WebChromeClient custom view).
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
 
     // Reads as desktop Chrome, which Luna officially supports.
     private val desktopUa =
@@ -91,11 +98,42 @@ class MainActivity : ComponentActivity() {
                     }
                     return true
                 }
+
+                // Fullscreen video: selene-inject.js calls the Fullscreen API on the
+                // <video>; Chromium then hands us its native surface here. Hosting it
+                // directly (WebView hidden underneath) lets it land on a hardware
+                // overlay plane instead of being GPU-composited inside the page —
+                // the fix for decode back-pressure/freezes. Web overlays (HUD/panel)
+                // are hidden while this is active; exit with Back.
+                override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+                    if (customView != null) { callback.onCustomViewHidden(); return }
+                    customView = view
+                    customViewCallback = callback
+                    web.visibility = View.GONE
+                    rootLayout.addView(view, FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                    goImmersive()
+                    Log.i("SeleneWeb", "[native] onShowCustomView (fullscreen video)")
+                }
+
+                override fun onHideCustomView() {
+                    val v = customView ?: return
+                    rootLayout.removeView(v)
+                    customView = null
+                    customViewCallback?.onCustomViewHidden()
+                    customViewCallback = null
+                    web.visibility = View.VISIBLE
+                    goImmersive()
+                    Log.i("SeleneWeb", "[native] onHideCustomView")
+                }
             }
         }
 
         injectShimAtDocumentStart(web)
-        setContentView(web)
+        // Wrap the WebView so the fullscreen-video custom view can be layered on top.
+        rootLayout = FrameLayout(this)
+        rootLayout.addView(web)
+        setContentView(rootLayout)
         web.loadUrl(lunaUrl)
     }
 
@@ -133,11 +171,19 @@ class MainActivity : ComponentActivity() {
             )
     }
 
-    // Let the D-pad BACK button navigate web history before exiting.
+    // Back button: exit fullscreen video first, else navigate web history.
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && web.canGoBack()) {
-            web.goBack()
-            return true
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (customView != null) {
+                // Exit via the Fullscreen API so Chromium fires onHideCustomView
+                // and cleans up its own state consistently.
+                web.evaluateJavascript("document.exitFullscreen && document.exitFullscreen();", null)
+                return true
+            }
+            if (web.canGoBack()) {
+                web.goBack()
+                return true
+            }
         }
         return super.onKeyDown(keyCode, event)
     }

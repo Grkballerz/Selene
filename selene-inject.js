@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.6.7
+// @version      0.6.8
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -121,6 +121,33 @@
       else de.style.zoom = String(z);
       log("zoom", z === 1 ? "off(removed)" : z, "streaming", isStreaming());
     } catch (e) { log("zoom apply failed", e); }
+  }
+
+  // Largest <video> = the game stream.
+  function findGameVideo() {
+    let best = null, area = 0;
+    document.querySelectorAll("video").forEach((v) => {
+      const r = v.getBoundingClientRect();
+      const a = r.width * r.height;
+      if (a > area) { area = a; best = v; }
+    });
+    return best;
+  }
+  // Put the game video into element-fullscreen so the native WebChromeClient
+  // hosts its surface on a hardware overlay plane (bypasses page compositing).
+  // MUST be called inside a user gesture (Fullscreen API requirement) — hence a
+  // menu action, ideally selected with the REMOTE (Enter = a real gesture).
+  function toggleVideoFullscreen() {
+    try {
+      if (document.fullscreenElement) { document.exitFullscreen(); log("fs exit"); return; }
+      const v = findGameVideo();
+      if (!v) { log("fs: no video found"); return; }
+      const req = v.requestFullscreen || v.webkitRequestFullscreen || v.webkitEnterFullscreen;
+      if (!req) { log("fs: no requestFullscreen"); return; }
+      const p = req.call(v);
+      if (p && p.catch) p.catch((e) => log("fs request rejected:", e && e.message));
+      log("fs requested");
+    } catch (e) { log("fs toggle failed", e && e.message); }
   }
 
   // ========================================================================
@@ -849,6 +876,8 @@
       { type: "slider", label: "Zoom", min: 50, max: 100, step: 5, unit: "%",
         note: "shrinks Luna · 100% while streaming",
         get: () => S.uiZoom, set: (v) => { S.uiZoom = v; saveSettings(); applyZoom(); } },
+      { type: "action", label: "Fullscreen video", note: "smoother · hides HUD · Back exits · use remote",
+        run: () => { toggleVideoFullscreen(); closeMenu(); } },
 
       { type: "header", label: "Video", icon: "contrast" },
       { type: "slider", label: "Clarity", min: 0, max: 100, step: 5, unit: "%", zero: "Off",

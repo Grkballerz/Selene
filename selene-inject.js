@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.6.9
+// @version      0.7.0
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -1098,7 +1098,6 @@
             }
           }
           prevBtn = b.map((x) => !!(x && x.pressed));
-          requestAnimationFrame(gamepadLoop);
           return;
         }
 
@@ -1110,7 +1109,6 @@
           if (ex && !chordPrev) { testMode = false; renderPanel(); }
           chordPrev = ex;
           prevBtn = b.map((x) => !!(x && x.pressed));
-          requestAnimationFrame(gamepadLoop);
           return;
         }
 
@@ -1134,7 +1132,6 @@
         prevBtn = b.map((x) => !!(x && x.pressed));
       }
     }
-    requestAnimationFrame(gamepadLoop);
   }
   window.addEventListener("keydown", (e) => {
     if (!menuOpen && (e.key === "h" || e.key === "H")) {
@@ -1171,7 +1168,11 @@
     injectSvgFilter();
     applyAll();
     setInterval(pollStats, 1000);
-    requestAnimationFrame(gamepadLoop);
+    // Poll the gamepad on a fixed timer, NOT requestAnimationFrame: rAF is
+    // throttled/stalled when the video pipeline is janky in-game, which starved
+    // the loop and made the menu chord undetectable exactly when a game was
+    // streaming. A timer keeps Selene's input alive regardless of render load.
+    setInterval(gamepadLoop, 16);
     // Keep zoom correct as streams start/stop even if a peer event is missed.
     setInterval(applyZoom, 1000);
     installKeyboardBridge();

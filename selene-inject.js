@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.6.3
+// @version      0.6.4
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -638,7 +638,11 @@
       stats.forEach((r) => {
         if (r.type === "inbound-rtp" && r.kind === "video") inbound = r;
         if (r.type === "candidate-pair" && (r.nominated || r.selected)) pair = r;
-        if (r.type === "codec") codecStat = codecStat || r;
+        if (r.type === "codec") {
+          // Prefer the VIDEO codec (the decode-heavy one) over audio/opus.
+          if ((r.mimeType || "").indexOf("video/") === 0) codecStat = r;
+          else if (!codecStat) codecStat = r;
+        }
       });
       let fps = 0, dropPct = 0, lossPct = 0, jitter = 0, mbps = 0, res = "—", codec = "—", rtt = 0;
       let decodeMs = 0, freezeCnt = 0, freezeNew = 0;

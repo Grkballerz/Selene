@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.7.1
+// @version      0.7.2
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -549,7 +549,11 @@
   if (_getGamepads) {
     const wrapped = function () {
       const raw = _getGamepads();
-      if (menuOpen) return neutralPads(raw);
+      // Only withhold input from Luna when the menu is open AND we're NOT
+      // streaming. In-game the panel can't reliably paint (GPU saturated by the
+      // video), so a stuck-open menu must never zero the controller — that
+      // stranded Luna nav after exiting a game.
+      if (menuOpen && !isStreaming()) return neutralPads(raw);
       return processPads(raw);
     };
     navigator.getGamepads = wrapped;
@@ -684,8 +688,8 @@
       // in-game freeze from flipping zoom off (which would itself stall the video).
       if (inbound && (inbound.framesDecoded || 0) > last.framesDecoded) lastActiveTs = now;
       const active = lastActiveTs > 0 && (now - lastActiveTs) < 3500;
-      if (active && !streamActive) { streamActive = true; startSession(); applyZoom(); }
-      else if (!active && streamActive) { streamActive = false; finalizeSession(); applyZoom(); }
+      if (active && !streamActive) { streamActive = true; startSession(); applyZoom(); if (menuOpen) closeMenu(); }
+      else if (!active && streamActive) { streamActive = false; finalizeSession(); applyZoom(); if (menuOpen) closeMenu(); }
       if (inbound) {
         fps = Math.round(inbound.framesPerSecond || 0);
         if (inbound.frameWidth) res = `${inbound.frameWidth}x${inbound.frameHeight}`;

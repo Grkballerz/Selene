@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SELENE — Luna unlocked for unsupported TVs
 // @namespace    https://github.com/Grkballerz/Selene
-// @version      0.6.8
+// @version      0.6.9
 // @description  Unlocks Amazon Luna on unsupported Android/Google TV devices with a polished, D-pad-navigable overlay: stats HUD with telemetry, controller remap/deadzone/vibration, codec + bitrate control, and clarity filter.
 // @match        https://luna.amazon.com/*
 // @match        https://*.luna.amazon.com/*
@@ -1012,6 +1012,7 @@
     menuOpen = true; pageStack = [rootPage()]; focus = 0; capturing = null; chordCap = null; testMode = false;
     animateNext = true;
     panel.style.display = "flex"; renderPanel();
+    log("openMenu — panel display", panel.style.display, "in-doc", !!panel.isConnected);
   }
   function closeMenu() { menuOpen = false; capturing = null; chordCap = null; testMode = false; panel.style.display = "none"; }
   function back() {
@@ -1114,7 +1115,7 @@
         }
 
         const chord = S.menuChord.length > 0 && S.menuChord.every((i) => isDown(i));
-        if (chord && !chordPrev) { menuOpen ? closeMenu() : openMenu(); }
+        if (chord && !chordPrev) { log("chord fired, menuOpen was", menuOpen); menuOpen ? closeMenu() : openMenu(); }
         chordPrev = chord;
         if (menuOpen) {
           if (capturing) {

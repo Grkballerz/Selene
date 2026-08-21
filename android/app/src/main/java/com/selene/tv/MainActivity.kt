@@ -9,7 +9,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
-import android.widget.FrameLayout
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
@@ -34,7 +33,6 @@ import androidx.webkit.WebViewFeature
 class MainActivity : ComponentActivity() {
 
     private lateinit var web: WebView
-    private lateinit var rootLayout: FrameLayout
 
     // Fullscreen-video state (WebChromeClient custom view).
     private var customView: View? = null
@@ -110,7 +108,7 @@ class MainActivity : ComponentActivity() {
                     customView = view
                     customViewCallback = callback
                     web.visibility = View.GONE
-                    rootLayout.addView(view, FrameLayout.LayoutParams(
+                    (window.decorView as ViewGroup).addView(view, ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
                     goImmersive()
                     Log.i("SeleneWeb", "[native] onShowCustomView (fullscreen video)")
@@ -118,7 +116,7 @@ class MainActivity : ComponentActivity() {
 
                 override fun onHideCustomView() {
                     val v = customView ?: return
-                    rootLayout.removeView(v)
+                    (window.decorView as ViewGroup).removeView(v)
                     customView = null
                     customViewCallback?.onCustomViewHidden()
                     customViewCallback = null
@@ -130,10 +128,7 @@ class MainActivity : ComponentActivity() {
         }
 
         injectShimAtDocumentStart(web)
-        // Wrap the WebView so the fullscreen-video custom view can be layered on top.
-        rootLayout = FrameLayout(this)
-        rootLayout.addView(web)
-        setContentView(rootLayout)
+        setContentView(web)
         web.loadUrl(lunaUrl)
     }
 

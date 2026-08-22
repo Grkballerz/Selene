@@ -107,7 +107,12 @@ class MainActivity : ComponentActivity() {
                     if (customView != null) { callback.onCustomViewHidden(); return }
                     customView = view
                     customViewCallback = callback
-                    web.visibility = View.GONE
+                    // Do NOT hide the WebView (View.GONE). A hidden WebView is
+                    // treated as a background page and Chromium throttles its JS
+                    // timers to ~1Hz — which throttles Luna's controller polling
+                    // and sending, causing severe input lag. Keep it VISIBLE
+                    // (occluded by the opaque video overlay on top) so input
+                    // stays at full rate; the video plays on the hardware overlay.
                     (window.decorView as ViewGroup).addView(view, ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
                     goImmersive()
@@ -120,7 +125,6 @@ class MainActivity : ComponentActivity() {
                     customView = null
                     customViewCallback?.onCustomViewHidden()
                     customViewCallback = null
-                    web.visibility = View.VISIBLE
                     goImmersive()
                     Log.i("SeleneWeb", "[native] onHideCustomView")
                 }
